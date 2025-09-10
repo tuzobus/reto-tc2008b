@@ -16,9 +16,9 @@ public class GridBuilder : MonoBehaviour
 
     [Header("Tile visuals")]
     public TileType tileType = TileType.Plane10x10;
-    [Range(0.1f, 1f)] public float tileFill = 1f; // cuánto de la celda ocupa en XZ
-    public float tileYOffset = 0f;                // levantar todo el piso si quieres
-    public float genericTileThickness = 0.02f;    // solo para GenericFlat (Y)
+    [Range(0.1f, 1f)] public float tileFill = 1f;
+    public float tileYOffset = 0f;
+    public float genericTileThickness = 0.02f;
 
     [Header("Door visuals")]
     public Material doorClosedMat;
@@ -27,13 +27,13 @@ public class GridBuilder : MonoBehaviour
     [Header("Entry decals (centradas en la celda)")]
     public float entryYOffset = 0.03f;
     public float entryFill    = 0.7f;
-    public bool  entryPrefabIsPlane = true; // Plane=10x10; Quad=1x1 (rotado X=90 en el prefab)
+    public bool entryPrefabIsPlane = true;
 
     // Puertas para actualizaciones
     readonly Dictionary<string, DoorVisual> doorMap = new();
 
     // ========================
-    //     CELDA ↔ MUNDO  (1-based)
+    //     CELDA a MUNDO(1-based)
     // ========================
     public Vector3 CenterOfCell(int r, int c)
     {
@@ -61,7 +61,6 @@ public class GridBuilder : MonoBehaviour
     {
         ClearParent(tilesParent);
 
-        // Evita heredar escalas raras desde el parent
         if (tilesParent != null && tilesParent.lossyScale != Vector3.one)
             Debug.LogWarning("[GridBuilder] tilesParent tiene escala != 1. Recomiendo (1,1,1).");
 
@@ -75,29 +74,23 @@ public class GridBuilder : MonoBehaviour
             {
                 case TileType.Plane10x10:
                 {
-                    // Plane de Unity mide 10x10 en XZ, y está horizontal por defecto
                     float s = cellSize * tileFill / 10f;
                     go.transform.localScale = new Vector3(s, 1f, s);
                     break;
                 }
                 case TileType.Quad1x1:
                 {
-                    // Quad mide 1x1 pero viene orientado en XY -> debe estar ROTADO X=90 en el PREFAB
                     float s = cellSize * tileFill;
                     go.transform.localScale = new Vector3(s, 1f, s);
-                    // Si tu Quad no está rotado en el prefab, descomenta:
-                    // go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
                     break;
                 }
                 case TileType.GenericFlat:
                 {
-                    // Para Cube u otros meshes: hacemos “baldosa” delgada
                     float sx = cellSize * tileFill;
                     float sz = cellSize * tileFill;
-                    float sy = genericTileThickness; // grosor (métrico)
+                    float sy = genericTileThickness;
                     go.transform.localScale = new Vector3(sx, sy, sz);
 
-                    // Coloca la cara superior al nivel Y=0 (asumiendo pivote en centro)
                     go.transform.position += Vector3.up * (sy * 0.5f);
                     break;
                 }
@@ -120,14 +113,14 @@ public class GridBuilder : MonoBehaviour
         for (int r = 1; r <= rows; r++)
         for (int c = 1; c <= cols; c++)
         {
-            string code = cells[r - 1][c - 1]; // "abcd" = up,left,down,right
+            string code = cells[r - 1][c - 1];
             var basePos = CenterOfCell(r, c);
             if (string.IsNullOrEmpty(code) || code.Length != 4) continue;
 
-            if (code[0] == '1') PlaceWall(basePos, 0f);   // up
-            if (code[1] == '1') PlaceWall(basePos, 90f);  // left
-            if (code[2] == '1') PlaceWall(basePos, 180f); // down
-            if (code[3] == '1') PlaceWall(basePos, 270f); // right
+            if (code[0] == '1') PlaceWall(basePos, 0f);
+            if (code[1] == '1') PlaceWall(basePos, 90f);
+            if (code[2] == '1') PlaceWall(basePos, 180f);
+            if (code[3] == '1') PlaceWall(basePos, 270f);
         }
     }
 

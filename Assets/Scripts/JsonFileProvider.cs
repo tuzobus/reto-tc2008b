@@ -22,7 +22,6 @@ public class JsonFileProvider : MonoBehaviour
 
     IEnumerator LoadJson<T>(string path, System.Action<T> onDone)
     {
-        // Asegura esquema file:// en rutas locales
         string url = path;
         if (!url.StartsWith("http") && !url.StartsWith("file://"))
             url = "file://" + url;

@@ -38,21 +38,21 @@ public class NetworkOneShotPlayback : MonoBehaviour
 
     IEnumerator Run()
     {
-        // 1) Config
+        // config
         yield return provider.LoadConfig(
             cfg => config = cfg,
             err => Debug.LogError($"[NetJsonProvider] {err}")
         );
         if (config == null) yield break;
 
-        // 2) Descarga SimLog completo
+        // descarga SimLog completo
         yield return provider.LoadFullLog(
             lg => log = lg,
             err => Debug.LogError($"[NetJsonProvider] {err}")
         );
         if (log == null) yield break;
 
-        // 3) Construye tablero + iniciales
+        // construye tablero e iniciales
         var parsedCells = config.cells ?? ParseCellsFromRows(config.cellRows, config.rows, config.cols);
         grid.BuildTiles(config.rows, config.cols);
         grid.BuildWalls(parsedCells);
@@ -60,19 +60,16 @@ public class NetworkOneShotPlayback : MonoBehaviour
         grid.BuildEntryMarkers(config.entries);
         SeedInitialIcons(config);
 
-        // Indexa snapshots
         snapsByT.Clear();
         if (log.snapshots != null)
             foreach (var s in log.snapshots) snapsByT[s.t] = s;
 
-        // Llena lista ordenada de t
         orderedTs.Clear();
         orderedTs.AddRange(snapsByT.Keys);
         orderedTs.Sort();
         if (debugLog && orderedTs.Count > 0)
             Debug.Log($"[Net] Snapshots disponibles (primeros 12): {string.Join(",", orderedTs.GetRange(0, Mathf.Min(12, orderedTs.Count)))}");
 
-        // 4) Reproduce con tus modos
         yield return PlayStepsGrouped(log.steps);
 
         if (debugLog)
@@ -99,19 +96,18 @@ public class NetworkOneShotPlayback : MonoBehaviour
     {
         if (steps != null) steps.Sort((a,b) => a.t.CompareTo(b.t));
 
-        // --- modo snapshots estricto: recorre los t reales de 'orderedTs' ---
         if (useSnapshotsStrict)
         {
             foreach (var t in orderedTs)
             {
-                // 1) aplicar snapshot exacto
+                // aplica snapshot exacto
                 if (snapsByT.TryGetValue(t, out var snap))
                 {
                     ApplySnapshot(snap);
                     if (debugLog) Debug.Log($"[Snapshot] t={t}");
                 }
 
-                // 2) eventos de ese mismo t (sin animar moves)
+                // eventos de ese mismo t (sin animar moves)
                 List<Step> batch = new();
                 if (steps != null)
                 {
@@ -122,7 +118,7 @@ public class NetworkOneShotPlayback : MonoBehaviour
                 {
                     switch (s.type)
                     {
-                        case "spawn_agent": /* ignorado en modo snapshot */ break;
+                        case "spawn_agent": break;
                         case "reveal_poi": HandleRevealPoi(s); break;
                         case "rescue":     HandleRescue(s);    break;
                         case "riot_spread":HandleRiotSpread(s);break;
@@ -133,10 +129,10 @@ public class NetworkOneShotPlayback : MonoBehaviour
 
                 if (stepDuration > 0) yield return new WaitForSeconds(stepDuration);
             }
-            yield break; // terminamos aquí
+            yield break;
         }
 
-        // --- si NO usamos snapshots, reproducir por eventos (compressed / step-by-step) ---
+        // reproducción por eventos compressed / step-by-step
         int i = 0;
         while (i < (steps?.Count ?? 0))
         {
@@ -246,8 +242,8 @@ public class NetworkOneShotPlayback : MonoBehaviour
         Vector3 pos = grid.CenterOfCell(r, c);
         pos.y += iconYOffset;
 
-        float s = iconPrefabIsPlane ? (grid.cellSize * iconFill / 10f)  // Plane es 10x10
-                                    : (grid.cellSize * iconFill);       // Quad1x1 u otros
+        float s = iconPrefabIsPlane ? (grid.cellSize * iconFill / 10f)
+                                    : (grid.cellSize * iconFill);
         var go  = Instantiate(prefab, pos, Quaternion.identity, iconsParent);
         go.transform.localScale = new Vector3(s, 1f, s);
 

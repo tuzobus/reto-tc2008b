@@ -3,13 +3,13 @@ using UnityEngine;
 public class AgentView : MonoBehaviour
 {
     [Header("References")]
-    public Transform visualRoot;       // hijo "Visual" (donde está el Animator)
-    public Animator animator;          // se autollenará si está en visualRoot
+    public Transform visualRoot;
+    public Animator animator;
 
     [Header("Tuning")]
-    public float yawOffsetDegrees = 0f; // si tu modelo “mira” a +Z deja 0; si mira a +X pon -90
-    public float turnSpeed = 12f;       // qué tan rápido rota hacia el movimiento
-    public float idleThreshold = 0.1f;  // umbral para considerar Speed=0
+    public float yawOffsetDegrees = 0f;
+    public float turnSpeed = 12f;
+    public float idleThreshold = 0.1f;
 
     void Awake()
     {
@@ -20,7 +20,6 @@ public class AgentView : MonoBehaviour
             animator = visualRoot.GetComponentInChildren<Animator>();
     }
 
-    /// Llamado constantemente durante un movimiento para orientar al modelo.
     public void FaceDirection(Vector3 worldDelta)
     {
         if (visualRoot == null) return;
@@ -35,7 +34,6 @@ public class AgentView : MonoBehaviour
         visualRoot.rotation = Quaternion.Slerp(visualRoot.rotation, look, Time.deltaTime * turnSpeed);
     }
 
-    /// Actualiza el parámetro "Speed" del Animator (0 = idle, >0 = caminar)
     public void SetSpeed(float speed)
     {
         if (animator == null) return;

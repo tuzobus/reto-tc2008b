@@ -176,7 +176,7 @@ public class PlaybackController : MonoBehaviour
         {
             int t = steps[i].t;
 
-            // batch por tick (nota: si no hay eventos, ese t “no existe” aquí -> saltos de t son normales)
+            // batch por tick (nota: si no hay eventos, ese t no existe aquí: saltos de t son normales)
             List<Step> batch = new();
             while (i < steps.Count && steps[i].t == t) { batch.Add(steps[i]); i++; }
 
