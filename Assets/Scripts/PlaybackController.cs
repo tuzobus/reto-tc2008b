@@ -4,6 +4,8 @@ using UnityEngine;
 
 public class PlaybackController : MonoBehaviour
 {
+    public enum PlaybackMode { Snapshots, EventsCompressed, EventsStepByStep }
+
     public JsonFileProvider provider;
     public GridBuilder grid;
 
@@ -14,9 +16,12 @@ public class PlaybackController : MonoBehaviour
     public Transform agentsParent, iconsParent;
 
     [Header("Playback")]
-    public float stepDuration = 0.5f;   // tiempo entre ticks t y t+1
-    public float moveLerpTime = 0.25f;  // duración de cada movimiento
-    public bool  debugLog = true;       // imprime lo que ejecuta
+    public PlaybackMode mode = PlaybackMode.Snapshots;
+    [Tooltip("Pausa entre ticks (solo rige el ritmo global; no afecta la duración de cada Lerp).")]
+    public float stepDuration = 0.5f;
+    [Tooltip("Duración del movimiento cuando hay animación (compressed o step-by-step).")]
+    public float moveLerpTime = 0.25f;
+    public bool  debugLog = true;
 
     [Header("Icon decals")]
     public float iconYOffset = 0.02f;
@@ -27,43 +32,67 @@ public class PlaybackController : MonoBehaviour
     SimLog log;
 
     readonly Dictionary<string, GameObject> agents = new();
-    readonly Dictionary<string, GameObject> icons  = new(); // key "type:r,c"
+    readonly Dictionary<string, GameObject> icons  = new();
+
+    // snapshots indexados por t
+    readonly Dictionary<int, Snapshot> snapshotsByT = new();
 
     void Start()
     {
         StartCoroutine(LoadAndPlay());
     }
 
+    void Update()
+    {
+        // Atajos para alternar en vivo
+        if (Input.GetKeyDown(KeyCode.Alpha1)) { mode = PlaybackMode.Snapshots; if (debugLog) Debug.Log("Modo → Snapshots"); }
+        if (Input.GetKeyDown(KeyCode.Alpha2)) { mode = PlaybackMode.EventsCompressed; if (debugLog) Debug.Log("Modo → Eventos (comprimido)"); }
+        if (Input.GetKeyDown(KeyCode.Alpha3)) { mode = PlaybackMode.EventsStepByStep; if (debugLog) Debug.Log("Modo → Eventos (paso a paso)"); }
+    }
+
     IEnumerator LoadAndPlay()
     {
         // 1) Cargar config
         yield return provider.LoadConfig(cfg => config = cfg);
-        if (config == null)
-        {
-            Debug.LogError("Config no cargada. Revisa ruta y JSON.");
-            yield break;
-        }
+        if (config == null) { Debug.LogError("Config no cargada."); yield break; }
 
         // 2) Cargar log
         yield return provider.LoadLog(lg => log = lg);
-        if (log == null)
-        {
-            Debug.LogError("Log no cargado. Revisa ruta y JSON.");
-            yield break;
-        }
+        if (log == null) { Debug.LogError("Log no cargado."); yield break; }
 
-        // 3) Construir tablero
+        // 3) Indexar snapshots (si los hay)
+        snapshotsByT.Clear();
+        if (log.snapshots != null)
+            foreach (var s in log.snapshots) snapshotsByT[s.t] = s;
+
+        // 4) Construir tablero + estado inicial
         BuildBoard(config);
         SeedInitialState(config);
 
-        if (log.steps == null || log.steps.Count == 0)
+        // 5) Reproducir según modo
+        switch (mode)
         {
-            Debug.LogWarning("Log sin 'steps'. Nada que reproducir.");
-            yield break;
-        }
+            case PlaybackMode.Snapshots:
+                if (log.snapshots == null || log.snapshots.Count == 0)
+                {
+                    Debug.LogWarning("Modo Snapshots seleccionado, pero no hay snapshots en el log. Cambiando a Eventos (comprimido).");
+                    mode = PlaybackMode.EventsCompressed;
+                    yield return PlayByEventsCompressed(log.steps);
+                }
+                else
+                {
+                    yield return PlayBySnapshots(); // usa snapshots (t=0..N consecutivo)
+                }
+                break;
 
-        // 4) Reproducción: AGRUPADA POR T
-        yield return PlayStepsGrouped(log.steps);
+            case PlaybackMode.EventsCompressed:
+                yield return PlayByEventsCompressed(log.steps);
+                break;
+
+            case PlaybackMode.EventsStepByStep:
+                yield return PlayByEventsStepByStep(log.steps);
+                break;
+        }
 
         if (debugLog)
             Debug.Log($"Resultado: {log.result}  Rescued:{log.rescued} Lost:{log.lost} Damage:{log.damage}");
@@ -80,31 +109,18 @@ public class PlaybackController : MonoBehaviour
 
     static string[][] ParseCellsFromRows(string[] cellRows, int rows, int cols)
     {
-        if (cellRows == null || cellRows.Length != rows)
-        {
-            Debug.LogError("cellRows ausente o con conteo incorrecto.");
-            return null;
-        }
-
+        if (cellRows == null || cellRows.Length != rows) return null;
         var outCells = new string[rows][];
-        for (int r = 0; r < rows; r++)
-        {
-            var parts = cellRows[r].Split(' ');
-            if (parts.Length != cols)
-            {
-                Debug.LogError($"cellRows[{r}] no tiene {cols} columnas. Tiene {parts.Length}.");
-                return null;
-            }
-            outCells[r] = parts;
-        }
+        for (int r = 0; r < rows; r++) outCells[r] = cellRows[r].Split(' ');
         return outCells;
     }
 
     void SeedInitialState(MapConfig c)
     {
-        // POIs desconocidos al inicio
-        foreach (var p in c.pois)
-            PlaceOrSwapIcon($"poi:{p.r},{p.c}", poiUnknownPrefab, p.r, p.c);
+        // POIs desconocidos
+        if (c.pois != null)
+            foreach (var p in c.pois)
+                PlaceOrSwapIcon($"poi:{p.r},{p.c}", poiUnknownPrefab, p.r, p.c);
 
         // Disturbios iniciales
         if (c.riots != null)
@@ -113,32 +129,63 @@ public class PlaybackController : MonoBehaviour
     }
 
     // ===========================
-    //      REPRODUCCIÓN AGRUPADA
+    //      MODO: SNAPSHOTS
     // ===========================
-    IEnumerator PlayStepsGrouped(List<Step> steps)
+    IEnumerator PlayBySnapshots()
     {
-        // Asumimos que vienen por orden t ascendente (si no, ordenamos).
+        // asumimos t=0..T consecutivo en snapshots
+        int t = 0;
+        while (snapshotsByT.ContainsKey(t))
+        {
+            ApplySnapshotAtTick(t);
+            if (debugLog) Debug.Log($"[Snapshot] aplicado t={t}");
+            yield return new WaitForSeconds(stepDuration);
+            t++;
+        }
+    }
+
+    void ApplySnapshotAtTick(int t)
+    {
+        if (!snapshotsByT.TryGetValue(t, out var snap) || snap == null) return;
+
+        foreach (var a in snap.agents)
+        {
+            if (!agents.TryGetValue(a.id, out var go))
+            {
+                go = Instantiate(agentPrefab, grid.CenterOfCell(a.r, a.c), Quaternion.identity, agentsParent);
+                agents[a.id] = go;
+            }
+            else
+            {
+                // Teletransporte exacto al snapshot
+                agents[a.id].transform.position = grid.CenterOfCell(a.r, a.c);
+            }
+        }
+    }
+
+    // ===========================
+    //      MODO: EVENTOS (COMPRIMIDO)
+    // ===========================
+    IEnumerator PlayByEventsCompressed(List<Step> steps)
+    {
+        if (steps == null || steps.Count == 0) yield break;
         steps.Sort((a,b) => a.t.CompareTo(b.t));
 
         int i = 0;
         while (i < steps.Count)
         {
             int t = steps[i].t;
-            // recolecta el batch con el mismo t
+
+            // batch por tick (nota: si no hay eventos, ese t “no existe” aquí -> saltos de t son normales)
             List<Step> batch = new();
-            while (i < steps.Count && steps[i].t == t)
-            {
-                batch.Add(steps[i]);
-                i++;
-            }
+            while (i < steps.Count && steps[i].t == t) { batch.Add(steps[i]); i++; }
 
             if (debugLog) Debug.Log($"=== TICK {t}  (steps={batch.Count}) ===");
 
-            // 1) spawns primero (para que existan agentes antes de moverse)
-            foreach (var s in batch)
-                if (s.type == "spawn_agent") HandleSpawn(s);
+            // spawns primero
+            foreach (var s in batch) if (s.type == "spawn_agent") HandleSpawn(s);
 
-            // 2) “instantáneos” SIN movimiento
+            // eventos sin movimiento
             foreach (var s in batch)
             {
                 switch (s.type)
@@ -147,40 +194,107 @@ public class PlaybackController : MonoBehaviour
                     case "rescue":     HandleRescue(s);    break;
                     case "riot_spread":HandleRiotSpread(s);break;
                     case "riot_contained": HandleRiotContained(s); break;
-                    case "damage_inc": /* actualiza UI si tienes */ break;
-                    // move queda fuera; se hace después
+                    case "damage_inc": break;
                 }
             }
 
-            // 3) MOVER EN PARALELO
-            //   Lanza todas las corutinas de move y espera a que todas terminen.
-            int activeMoves = 0;
-            List<Coroutine> running = new();
+            // mover (solo último destino por agente en este tick)
+            var lastMove = new Dictionary<string, Step>();
+            foreach (var s in batch) if (s.type == "move") lastMove[s.id] = s;
 
-            foreach (var s in batch)
+            int active = 0;
+            foreach (var kv in lastMove)
             {
-                if (s.type == "move")
-                {
-                    if (agents.TryGetValue(s.id, out var go))
-                    {
-                        Vector3 target = grid.CellToWorld(s.to.r, s.to.c);
-                        activeMoves++;
-                        running.Add(StartCoroutine(LerpMove(go, target, moveLerpTime, () => { activeMoves--; })));
-                        if (debugLog) Debug.Log($"t={t} MOVE {s.id}: ({s.from.r},{s.from.c})->({s.to.r},{s.to.c})");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"[Playback] t={t} MOVE: agente {s.id} no existe.");
-                    }
-                }
+                var s = kv.Value;
+                if (!agents.TryGetValue(s.id, out var go)) continue;
+
+                var (rNow, cNow) = grid.WorldToCell(go.transform.position);
+                if (rNow == s.to.r && cNow == s.to.c) continue; // ya está ahí
+
+                Vector3 target = grid.CenterOfCell(s.to.r, s.to.c);
+                active++;
+                StartCoroutine(LerpMove(go, target, moveLerpTime, () => active--));
+
+                if (debugLog) Debug.Log($"t={t} MOVE (compressed) {s.id}: ->({s.to.r},{s.to.c})");
             }
 
-            // Espera a que terminen todos los move de este tick
-            while (activeMoves > 0) yield return null;
-
-            // 4) Pausa entre ticks (ritmo de reproducción)
+            while (active > 0) yield return null;
             if (stepDuration > 0f) yield return new WaitForSeconds(stepDuration);
         }
+    }
+
+    // ===========================
+    //      MODO: EVENTOS (PASO A PASO)
+    // ===========================
+    IEnumerator PlayByEventsStepByStep(List<Step> steps)
+    {
+        if (steps == null || steps.Count == 0) yield break;
+        steps.Sort((a,b) => a.t.CompareTo(b.t));
+
+        int i = 0;
+        while (i < steps.Count)
+        {
+            int t = steps[i].t;
+            List<Step> batch = new();
+            while (i < steps.Count && steps[i].t == t) { batch.Add(steps[i]); i++; }
+
+            if (debugLog) Debug.Log($"=== TICK {t}  (steps={batch.Count}) ===");
+
+            // spawns
+            foreach (var s in batch) if (s.type == "spawn_agent") HandleSpawn(s);
+
+            // eventos sin movimiento
+            foreach (var s in batch)
+            {
+                switch (s.type)
+                {
+                    case "reveal_poi": HandleRevealPoi(s); break;
+                    case "rescue":     HandleRescue(s);    break;
+                    case "riot_spread":HandleRiotSpread(s);break;
+                    case "riot_contained": HandleRiotContained(s); break;
+                    case "damage_inc": break;
+                }
+            }
+
+            // agrupar TODOS los moves por agente y reproducirlos en orden
+            var movesByAgent = new Dictionary<string, List<Step>>();
+            foreach (var s in batch)
+                if (s.type == "move")
+                {
+                    if (!movesByAgent.TryGetValue(s.id, out var list))
+                        list = movesByAgent[s.id] = new List<Step>();
+                    list.Add(s);
+                }
+
+            int active = 0;
+            foreach (var kv in movesByAgent)
+            {
+                if (!agents.TryGetValue(kv.Key, out var go)) continue;
+                active++;
+                StartCoroutine(PlayAgentMoves(go, kv.Value, moveLerpTime, () => active--));
+            }
+
+            while (active > 0) yield return null;
+            if (stepDuration > 0f) yield return new WaitForSeconds(stepDuration);
+        }
+    }
+
+    IEnumerator PlayAgentMoves(GameObject go, List<Step> moves, float totalTime, System.Action onDone)
+    {
+        float perMove = Mathf.Max(0.01f, totalTime / Mathf.Max(1, moves.Count));
+        foreach (var m in moves)
+        {
+            Vector3 target = grid.CenterOfCell(m.to.r, m.to.c);
+            float t = 0f; Vector3 start = go.transform.position;
+            while (t < perMove)
+            {
+                t += Time.deltaTime;
+                go.transform.position = Vector3.Lerp(start, target, Mathf.Clamp01(t / perMove));
+                yield return null;
+            }
+            go.transform.position = target;
+        }
+        onDone?.Invoke();
     }
 
     // =============== HANDLERS ===============
@@ -188,7 +302,7 @@ public class PlaybackController : MonoBehaviour
     {
         if (!agents.ContainsKey(s.id))
         {
-            var go = Instantiate(agentPrefab, grid.CellToWorld(s.r, s.c), Quaternion.identity, agentsParent);
+            var go = Instantiate(agentPrefab, grid.CenterOfCell(s.r, s.c), Quaternion.identity, agentsParent);
             agents[s.id] = go;
             if (debugLog) Debug.Log($"SPAWN {s.id} at ({s.r},{s.c})");
         }
@@ -225,49 +339,29 @@ public class PlaybackController : MonoBehaviour
     {
         Vector3 start = go.transform.position;
         float t = 0f;
-
-        // Si tienes AgentView para giro/animación:
-        var view = go.GetComponent<AgentView>();
-
         while (t < time)
         {
             t += Time.deltaTime;
-            float a = Mathf.Clamp01(t / time);
-            Vector3 next = Vector3.Lerp(start, target, a);
-            if (view != null)
-            {
-                view.FaceDirection(next - go.transform.position);
-                view.SetSpeed(1f);
-            }
-            go.transform.position = next;
+            go.transform.position = Vector3.Lerp(start, target, Mathf.Clamp01(t/time));
             yield return null;
         }
         go.transform.position = target;
-        if (view != null) view.SetSpeed(0f);
-
         onDone?.Invoke();
     }
 
     void PlaceOrSwapIcon(string key, GameObject prefab, int r, int c)
     {
         RemoveIcon(key);
-
-        Vector3 pos = grid.CellToWorld(r, c);
+        Vector3 pos = grid.CenterOfCell(r, c);
         pos.y += iconYOffset;
-
         float s = iconPrefabIsPlane ? (grid.cellSize * iconFill / 10f) : (grid.cellSize * iconFill);
         var go  = Instantiate(prefab, pos, Quaternion.identity, iconsParent);
         go.transform.localScale = new Vector3(s, 1f, s);
-
         icons[key] = go;
     }
 
     void RemoveIcon(string key)
     {
-        if (icons.TryGetValue(key, out var go))
-        {
-            Destroy(go);
-            icons.Remove(key);
-        }
+        if (icons.TryGetValue(key, out var go)) { Destroy(go); icons.Remove(key); }
     }
 }

@@ -3,36 +3,106 @@ using System.Collections.Generic;
 
 public class GridBuilder : MonoBehaviour
 {
+    public enum TileType { Plane10x10, Quad1x1, GenericFlat }
+
+    [Header("Grid")]
     public float cellSize = 1f;
 
+    [Header("Parents")]
     public Transform tilesParent, wallsParent, doorsParent, entriesParent;
+
+    [Header("Prefabs")]
     public GameObject tilePrefab, wallPrefab, doorPrefab, entryPrefab;
+
+    [Header("Tile visuals")]
+    public TileType tileType = TileType.Plane10x10;
+    [Range(0.1f, 1f)] public float tileFill = 1f; // cuánto de la celda ocupa en XZ
+    public float tileYOffset = 0f;                // levantar todo el piso si quieres
+    public float genericTileThickness = 0.02f;    // solo para GenericFlat (Y)
 
     [Header("Door visuals")]
     public Material doorClosedMat;
     public Material doorOpenMat;
 
     [Header("Entry decals (centradas en la celda)")]
-    public float entryYOffset = 0.03f;    // levanta un poco (evitar z-fighting)
-    public float entryFill    = 0.7f;     // 0..1 del tamaño de la celda
-    public bool  entryPrefabIsPlane = true; // Plane=10x10; Quad=1x1 (girado X=90 en el prefab)
+    public float entryYOffset = 0.03f;
+    public float entryFill    = 0.7f;
+    public bool  entryPrefabIsPlane = true; // Plane=10x10; Quad=1x1 (rotado X=90 en el prefab)
 
-    // Mapa de puertas para poder actualizar su estado en runtime
+    // Puertas para actualizaciones
     readonly Dictionary<string, DoorVisual> doorMap = new();
 
-    public Vector3 CellToWorld(int r, int c)
+    // ========================
+    //     CELDA ↔ MUNDO  (1-based)
+    // ========================
+    public Vector3 CenterOfCell(int r, int c)
     {
         float x = (c - 1) * cellSize;
         float z = - (r - 1) * cellSize;
         return new Vector3(x, 0f, z);
     }
 
+    public (int r, int c) WorldToCell(Vector3 world)
+    {
+        int c = Mathf.RoundToInt((world.x / cellSize) + 1f);
+        int r = Mathf.RoundToInt((-world.z / cellSize) + 1f);
+        return (r, c);
+    }
+
+    public Vector3 SnapToCellCenter(Vector3 world) {
+        var (r,c) = WorldToCell(world);
+        return CenterOfCell(r,c);
+    }
+
+    // ========================
+    //     CONSTRUCCIÓN
+    // ========================
     public void BuildTiles(int rows, int cols)
     {
         ClearParent(tilesParent);
+
+        // Evita heredar escalas raras desde el parent
+        if (tilesParent != null && tilesParent.lossyScale != Vector3.one)
+            Debug.LogWarning("[GridBuilder] tilesParent tiene escala != 1. Recomiendo (1,1,1).");
+
         for (int r = 1; r <= rows; r++)
         for (int c = 1; c <= cols; c++)
-            Instantiate(tilePrefab, CellToWorld(r, c), Quaternion.identity, tilesParent);
+        {
+            var pos = CenterOfCell(r, c) + Vector3.up * tileYOffset;
+            var go  = Instantiate(tilePrefab, pos, Quaternion.identity, tilesParent);
+
+            switch (tileType)
+            {
+                case TileType.Plane10x10:
+                {
+                    // Plane de Unity mide 10x10 en XZ, y está horizontal por defecto
+                    float s = cellSize * tileFill / 10f;
+                    go.transform.localScale = new Vector3(s, 1f, s);
+                    break;
+                }
+                case TileType.Quad1x1:
+                {
+                    // Quad mide 1x1 pero viene orientado en XY -> debe estar ROTADO X=90 en el PREFAB
+                    float s = cellSize * tileFill;
+                    go.transform.localScale = new Vector3(s, 1f, s);
+                    // Si tu Quad no está rotado en el prefab, descomenta:
+                    // go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                    break;
+                }
+                case TileType.GenericFlat:
+                {
+                    // Para Cube u otros meshes: hacemos “baldosa” delgada
+                    float sx = cellSize * tileFill;
+                    float sz = cellSize * tileFill;
+                    float sy = genericTileThickness; // grosor (métrico)
+                    go.transform.localScale = new Vector3(sx, sy, sz);
+
+                    // Coloca la cara superior al nivel Y=0 (asumiendo pivote en centro)
+                    go.transform.position += Vector3.up * (sy * 0.5f);
+                    break;
+                }
+            }
+        }
     }
 
     public void BuildWalls(string[][] cells)
@@ -51,7 +121,7 @@ public class GridBuilder : MonoBehaviour
         for (int c = 1; c <= cols; c++)
         {
             string code = cells[r - 1][c - 1]; // "abcd" = up,left,down,right
-            var basePos = CellToWorld(r, c);
+            var basePos = CenterOfCell(r, c);
             if (string.IsNullOrEmpty(code) || code.Length != 4) continue;
 
             if (code[0] == '1') PlaceWall(basePos, 0f);   // up
@@ -66,14 +136,15 @@ public class GridBuilder : MonoBehaviour
         float half = cellSize * 0.5f;
         Vector3 offset = rotY switch
         {
-            0f   => new Vector3(0, 0,  half),  // borde superior
-            90f  => new Vector3(-half, 0, 0),  // borde izquierdo
-            180f => new Vector3(0, 0, -half),  // borde inferior
-            270f => new Vector3( half, 0, 0),  // borde derecho
+            0f   => new Vector3(0, 0,  half),
+            90f  => new Vector3(-half, 0, 0),
+            180f => new Vector3(0, 0, -half),
+            270f => new Vector3( half, 0, 0),
             _    => Vector3.zero
         };
 
         var go = Instantiate(wallPrefab, cellCenter + offset, Quaternion.Euler(0, rotY, 0), wallsParent);
+        // Asegura largo = cellSize en el eje de la pared
         go.transform.localScale = new Vector3(cellSize, go.transform.localScale.y, go.transform.localScale.z);
         go.transform.position  += Vector3.up * (go.transform.localScale.y * 0.5f);
     }
@@ -88,15 +159,14 @@ public class GridBuilder : MonoBehaviour
 
         foreach (var d in doors)
         {
-            // Horizontal: (r, c) ↔ (r, c+1)
             if (d.r1 == d.r2 && Mathf.Abs(d.c1 - d.c2) == 1)
             {
                 int r = d.r1;
                 int cMin = Mathf.Min(d.c1, d.c2);
-                Vector3 cell = CellToWorld(r, cMin);
+                Vector3 cell = CenterOfCell(r, cMin);
 
-                Vector3 pos = cell + new Vector3(+half, 0f, 0f); // borde derecho de (r,cMin)
-                float rotY = 90f; // a lo largo del eje Z
+                Vector3 pos = cell + new Vector3(+half, 0f, 0f);
+                float rotY = 90f;
 
                 var go = Instantiate(doorPrefab, pos, Quaternion.Euler(0, rotY, 0), doorsParent);
                 go.transform.localScale = new Vector3(cellSize * 0.6f, go.transform.localScale.y, go.transform.localScale.z);
@@ -104,15 +174,14 @@ public class GridBuilder : MonoBehaviour
 
                 RegisterDoor(go, d);
             }
-            // Vertical: (r, c) ↔ (r+1, c)
             else if (d.c1 == d.c2 && Mathf.Abs(d.r1 - d.r2) == 1)
             {
                 int c = d.c1;
                 int rMin = Mathf.Min(d.r1, d.r2);
-                Vector3 cell = CellToWorld(rMin, c);
+                Vector3 cell = CenterOfCell(rMin, c);
 
-                Vector3 pos = cell + new Vector3(0f, 0f, -half); // borde inferior de (rMin,c)
-                float rotY = 0f; // a lo largo del eje X
+                Vector3 pos = cell + new Vector3(0f, 0f, -half);
+                float rotY = 0f;
 
                 var go = Instantiate(doorPrefab, pos, Quaternion.Euler(0, rotY, 0), doorsParent);
                 go.transform.localScale = new Vector3(cellSize * 0.6f, go.transform.localScale.y, go.transform.localScale.z);
@@ -133,31 +202,23 @@ public class GridBuilder : MonoBehaviour
         if (vis == null) vis = go.AddComponent<DoorVisual>();
         vis.Init(doorClosedMat, doorOpenMat, d.open);
 
-        doorMap[DoorKey(d.r1, c1: d.c1, d.r2, d.c2)] = vis;
-        doorMap[DoorKey(d.r2, c1: d.c2, d.r1, d.c1)] = vis; // clave simétrica
+        doorMap[DoorKey(d.r1, d.c1, d.r2, d.c2)] = vis;
+        doorMap[DoorKey(d.r2, d.c2, d.r1, d.c1)] = vis;
     }
 
     public void SetDoorStateByCells(int r1, int c1, int r2, int c2, bool isOpen)
     {
         var key = DoorKey(r1, c1, r2, c2);
-        if (doorMap.TryGetValue(key, out var vis))
-            vis.SetOpen(isOpen);
-        else
-            Debug.LogWarning($"[GridBuilder] No encontré puerta {key} para actualizar estado.");
+        if (doorMap.TryGetValue(key, out var vis)) vis.SetOpen(isOpen);
+        else Debug.LogWarning($"[GridBuilder] No encontré puerta {key} para actualizar estado.");
     }
 
     static string DoorKey(int r1, int c1, int r2, int c2)
     {
-        // Normaliza el par para que A-B == B-A
-        if (r2 < r1 || (r2 == r1 && c2 < c1))
-        {
-            (r1, r2) = (r2, r1);
-            (c1, c2) = (c2, c1);
-        }
+        if (r2 < r1 || (r2 == r1 && c2 < c1)) { (r1, r2) = (r2, r1); (c1, c2) = (c2, c1); }
         return $"{r1},{c1}-{r2},{c2}";
     }
 
-    // Entries como decals centrados en la celda (sin tocar muros)
     public void BuildEntryMarkers(List<RC> entries)
     {
         ClearParent(entriesParent);
@@ -165,16 +226,12 @@ public class GridBuilder : MonoBehaviour
 
         foreach (var e in entries)
         {
-            Vector3 pos = CellToWorld(e.r, e.c);
+            Vector3 pos = CenterOfCell(e.r, e.c);
             pos.y += entryYOffset;
 
             float s = entryPrefabIsPlane ? (cellSize * entryFill / 10f) : (cellSize * entryFill);
             var go  = Instantiate(entryPrefab, pos, Quaternion.identity, entriesParent);
             go.transform.localScale = new Vector3(s, 1f, s);
-
-            // Si tu prefab es Quad (1x1), asegúrate de que esté ROTADO EN EL PREFAB a X=90.
-            // (Si quieres forzarlo desde aquí, descomenta:)
-            // go.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
 
             var r = go.GetComponentInChildren<Renderer>();
             if (r != null)
@@ -193,7 +250,6 @@ public class GridBuilder : MonoBehaviour
     }
 }
 
-// Componente simple para cambiar material según estado (open/closed)
 public class DoorVisual : MonoBehaviour
 {
     Renderer[] rends;
@@ -202,9 +258,8 @@ public class DoorVisual : MonoBehaviour
 
     public void Init(Material closed, Material open, bool initialOpen)
     {
-        closedMat = closed;
-        openMat   = open;
-        rends     = GetComponentsInChildren<Renderer>(true);
+        closedMat = closed; openMat = open;
+        rends = GetComponentsInChildren<Renderer>(true);
         SetOpen(initialOpen, true);
     }
 

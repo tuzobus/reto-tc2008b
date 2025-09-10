@@ -693,6 +693,10 @@ MonoBehaviour:
   wallPrefab: {fileID: 2033821521862713051, guid: 0df87c2c70901485c9a89abbb940d419, type: 3}
   doorPrefab: {fileID: 8353043040640815814, guid: 8772a9d07ef1a4a00aec4667de8ce741, type: 3}
   entryPrefab: {fileID: 4237716504035969997, guid: 388b86595c1f244f49b75d65e34f80f0, type: 3}
+  tileType: 2
+  tileFill: 1
+  tileYOffset: 0
+  genericTileThickness: 0.02
   doorClosedMat: {fileID: 0}
   doorOpenMat: {fileID: 0}
   entryYOffset: 0.03

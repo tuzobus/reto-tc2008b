@@ -32,14 +32,28 @@ public class Step {
     public int amount;    // para 'damage_inc'
 
     // —— Nuevos campos flexibles ——
-    public string severity; // "mild"/"active"/"grave" (para riot_set/riot_upgrade)
-    public bool   open;     // estado de puerta (para door_state/open_door/close_door)
-    public int    r1, c1, r2, c2; // identificar una puerta por las dos celdas vecinas
+    public string severity; // "mild"/"active"/"grave"
+    public bool   open;     // estado de puerta
+    public int    r1, c1, r2, c2; // identificar puerta
+}
+
+// ===== NUEVOS: snapshots =====
+[Serializable]
+public class AgentState {
+    public string id;
+    public int r, c;
+}
+
+[Serializable]
+public class Snapshot {
+    public int t;
+    public List<AgentState> agents;
 }
 
 [Serializable]
 public class SimLog {
     public List<Step> steps;
+    public List<Snapshot> snapshots;   // <--- aquí entran los snapshots
     public string result;
     public int rescued, lost, damage;
 }
