@@ -624,6 +624,8 @@ GameObject:
   - component: {fileID: 1930664213}
   - component: {fileID: 1930664212}
   - component: {fileID: 1930664211}
+  - component: {fileID: 1930664216}
+  - component: {fileID: 1930664215}
   m_Layer: 0
   m_Name: Sistema
   m_TagString: Untagged
@@ -638,7 +640,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1930664210}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 93856df7df42a4f64b7695e653f701f5, type: 3}
   m_Name: 
@@ -652,7 +654,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1930664210}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f40e6cb1d6c3b4c08a287f403408a499, type: 3}
   m_Name: 
@@ -666,6 +668,7 @@ MonoBehaviour:
   riotPrefab: {fileID: 2259116212566779657, guid: 227310564ab4b4d9ba2701f446f2be52, type: 3}
   agentsParent: {fileID: 521032847}
   iconsParent: {fileID: 325869241}
+  mode: 1
   stepDuration: 0.5
   moveLerpTime: 0.25
   debugLog: 1
@@ -721,6 +724,48 @@ Transform:
   - {fileID: 1217330209}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1930664215
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1930664210}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f70c42812b88848d69cac8133d5152fd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  provider: {fileID: 1930664216}
+  grid: {fileID: 1930664213}
+  iconYOffset: 0.08
+  iconFill: 0.4
+  iconPrefabIsPlane: 1
+  agentPrefab: {fileID: 5184933024616991997, guid: 86cd8e29477e546ceb520b102573fe25, type: 3}
+  poiUnknownPrefab: {fileID: 9105743867222533124, guid: 2ab9e25e89c0d48cb8cc20c883baffa5, type: 3}
+  poiVictimPrefab: {fileID: 4445850199902855050, guid: fb0c27507cb9f47258134d9e6964ef8f, type: 3}
+  poiFalsePrefab: {fileID: 4237716504035969997, guid: bd4fc25680a38476f95a09e0ac95ae45, type: 3}
+  riotPrefab: {fileID: 2259116212566779657, guid: 227310564ab4b4d9ba2701f446f2be52, type: 3}
+  agentsParent: {fileID: 521032847}
+  iconsParent: {fileID: 325869241}
+  useSnapshotsStrict: 0
+  eventsCompressed: 1
+  stepDuration: 0.5
+  moveLerpTime: 0.25
+  debugLog: 1
+--- !u!114 &1930664216
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1930664210}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30037439750064dc084fe6cad675b1d7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  baseUrl: http://127.0.0.1:5000
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
