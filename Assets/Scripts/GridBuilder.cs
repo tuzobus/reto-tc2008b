@@ -1,3 +1,4 @@
+// Generado parcialmente con Chatgpt
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -26,7 +27,7 @@ public class GridBuilder : MonoBehaviour
 
     [Header("Entry decals (centradas en la celda)")]
     public float entryYOffset = 0.03f;
-    public float entryFill    = 0.7f;
+    public float entryFill = 0.7f;
     public bool entryPrefabIsPlane = true;
 
     // Puertas para actualizaciones
@@ -34,14 +35,11 @@ public class GridBuilder : MonoBehaviour
     readonly Dictionary<string, GameObject> wallMap = new();
     static string WallKey(int r1, int c1, int r2, int c2)
     {
-        // clave no-direccional (normalizada)
         if (r2 < r1 || (r2 == r1 && c2 < c1)) { (r1, r2) = (r2, r1); (c1, c2) = (c2, c1); }
         return $"{r1},{c1}-{r2},{c2}";
     }
 
-    // ========================
-    //     CELDA a MUNDO(1-based)
-    // ========================
+    // Celda a mundo
     public Vector3 CenterOfCell(int r, int c)
     {
         float x = (c - 1) * cellSize;
@@ -61,9 +59,7 @@ public class GridBuilder : MonoBehaviour
         return CenterOfCell(r,c);
     }
 
-    // ========================
-    //     CONSTRUCCIÓN
-    // ========================
+    // Construcción de la grid, generada por Chatgpt
     public void BuildTiles(int rows, int cols)
     {
         ClearParent(tilesParent);
@@ -112,7 +108,7 @@ public class GridBuilder : MonoBehaviour
 
         if (cells == null || cells.Length == 0)
         {
-            Debug.LogError("cells es null o vacío; no se pueden construir muros.");
+            Debug.LogError("Es imposible construrir muros.");
             return;
         }
 
@@ -139,16 +135,16 @@ public class GridBuilder : MonoBehaviour
     void PlaceWallSegment(int r1, int c1, int r2, int c2, float rotY)
     {
         string key = WallKey(r1, c1, r2, c2);
-        if (wallMap.ContainsKey(key)) return; // ya creado por la otra celda
+        if (wallMap.ContainsKey(key)) return;
 
         Vector3 cellCenter = CenterOfCell(r1, c1);
         float half = cellSize * 0.5f;
         Vector3 offset = rotY switch
         {
-            0f   => new Vector3(0, 0,  +half),  // top edge de (r1,c1)
-            90f  => new Vector3(-half, 0, 0),   // left edge
-            180f => new Vector3(0, 0,  -half),  // bottom edge
-            270f => new Vector3(+half, 0, 0),   // right edge
+            0f   => new Vector3(0, 0,  +half), // top edge
+            90f  => new Vector3(-half, 0, 0), // left edge
+            180f => new Vector3(0, 0,  -half), // bottom edge
+            270f => new Vector3(+half, 0, 0), // right edge
             _    => Vector3.zero
         };
 
@@ -159,6 +155,7 @@ public class GridBuilder : MonoBehaviour
         wallMap[key] = go;
     }
 
+    // Función de eliminado de paredes duplicadas generada por Chatgpt
     public void RemoveWallByCells(int r1, int c1, int r2, int c2)
     {
         string key = WallKey(r1, c1, r2, c2);
@@ -169,7 +166,7 @@ public class GridBuilder : MonoBehaviour
         }
         else
         {
-            Debug.LogWarning($"[GridBuilder] No encontré muro {key} para eliminar.");
+            Debug.LogWarning($"[GridBuilder] Muro {key} no encontrado.");
         }
     }
 
@@ -186,7 +183,6 @@ public class GridBuilder : MonoBehaviour
         };
 
         var go = Instantiate(wallPrefab, cellCenter + offset, Quaternion.Euler(0, rotY, 0), wallsParent);
-        // Asegura largo = cellSize en el eje de la pared
         go.transform.localScale = new Vector3(cellSize, go.transform.localScale.y, go.transform.localScale.z);
         go.transform.position  += Vector3.up * (go.transform.localScale.y * 0.5f);
     }
@@ -252,7 +248,7 @@ public class GridBuilder : MonoBehaviour
     {
         var key = DoorKey(r1, c1, r2, c2);
         if (doorMap.TryGetValue(key, out var vis)) vis.SetOpen(isOpen);
-        else Debug.LogWarning($"[GridBuilder] No encontré puerta {key} para actualizar estado.");
+        else Debug.LogWarning($"[GridBuilder] Puerta {key} no encontrada para cambiar estado.");
     }
 
     static string DoorKey(int r1, int c1, int r2, int c2)

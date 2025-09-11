@@ -211,7 +211,7 @@ Camera:
   near clip plane: 0.3
   far clip plane: 1000
   field of view: 60
-  orthographic: 1
+  orthographic: 0
   orthographic size: 3.2
   m_Depth: -1
   m_CullingMask:
@@ -236,13 +236,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 3.5, y: 10, z: -2.5}
+  m_LocalRotation: {x: 0.56640625, y: 0, z: 0, w: 0.82412624}
+  m_LocalPosition: {x: 3.5, y: 5.5, z: -5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 69, y: 0, z: 0}
 --- !u!114 &330585547
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -622,8 +622,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1930664214}
   - component: {fileID: 1930664213}
-  - component: {fileID: 1930664216}
   - component: {fileID: 1930664215}
+  - component: {fileID: 1930664216}
   - component: {fileID: 1930664211}
   - component: {fileID: 1930664212}
   m_Layer: 0
@@ -742,16 +742,16 @@ MonoBehaviour:
   iconFill: 0.4
   iconPrefabIsPlane: 1
   agentPrefab: {fileID: 5184933024616991997, guid: 86cd8e29477e546ceb520b102573fe25, type: 3}
-  poiUnknownPrefab: {fileID: 9105743867222533124, guid: 2ab9e25e89c0d48cb8cc20c883baffa5, type: 3}
+  poiUnknownPrefab: {fileID: 585521670851282012, guid: cde158a73d757429c96b07791b52be1d, type: 3}
   poiVictimPrefab: {fileID: 3134684412196577521, guid: 30e44b281d92b4820a0baded39345541, type: 3}
   poiFalsePrefab: {fileID: 4237716504035969997, guid: bd4fc25680a38476f95a09e0ac95ae45, type: 3}
-  riotPrefab: {fileID: 2259116212566779657, guid: 227310564ab4b4d9ba2701f446f2be52, type: 3}
+  riotPrefab: {fileID: 5652587210919394789, guid: 5346f5358e51f4c9e8dc4e322cf54d93, type: 3}
   agentsParent: {fileID: 521032847}
   iconsParent: {fileID: 325869241}
   useSnapshotsStrict: 0
-  eventsCompressed: 1
-  stepDuration: 0.5
-  moveLerpTime: 0.25
+  eventsCompressed: 0
+  stepDuration: 0.4
+  moveLerpTime: 0.1
   debugLog: 1
 --- !u!114 &1930664216
 MonoBehaviour:

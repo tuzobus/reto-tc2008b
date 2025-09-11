@@ -1,4 +1,5 @@
-# smart breakwalls
+# smart + romper paredes
+# Generado parcialmente con ChatGPT
 
 from mesa import Agent, Model
 from mesa.space import MultiGrid
@@ -12,15 +13,13 @@ from pathlib import Path
 import heapq
 
 
-# ============================================================
-#                       LOGGER UNITY
-# ============================================================
+# LOGGER
 class SimLogger:
     def __init__(self):
-        self.steps = []      # eventos puntuales
-        self.snapshots = []  # estado final por tick
+        self.steps = []  # steps
+        # snapshots (después de ejecutar todos los steps por turno)
+        self.snapshots = []
 
-    # ---- eventos ----
     def spawn_agent(self, aid, r, c, t):
         self.steps.append({"t": int(t), "type": "spawn_agent",
                            "id": str(aid), "r": int(r), "c": int(c)})
@@ -55,7 +54,6 @@ class SimLogger:
         self.steps.append(
             {"t": int(t), "type": "damage_inc", "amount": int(amount)})
 
-    # NUEVO: evento para suprimir el segmento de muro entre dos celdas vecinas
     def break_wall(self, pos1, pos2, t):
         self.steps.append({
             "t": int(t), "type": "break_wall",
@@ -63,11 +61,10 @@ class SimLogger:
             "r2": int(pos2[1] + 1), "c2": int(pos2[0] + 1)
         })
 
-    # ---- snapshots (estado final por tick) ----
+    # snapshots (estado final por tick)
     def snapshot_tick(self, model, t, include_pois=False, include_riots=True, include_doors=False):
         snap = {"t": int(t)}
 
-        # agentes
         agents = []
         for a in model.schedule.agents:
             if getattr(a, "pos", None) is not None:
@@ -76,7 +73,6 @@ class SimLogger:
         agents.sort(key=lambda x: int(x["id"]))
         snap["agents"] = agents
 
-        # riots (para Unity)
         if include_riots:
             riots = []
             for (x, y), contents in model.cell_contents.items():
@@ -99,7 +95,6 @@ class SimLogger:
 
         self.snapshots.append(snap)
 
-    # empaquetado final
     def to_simlog(self, result, rescued, lost, damage, meta=None):
         out = {
             "result": result,
@@ -114,9 +109,7 @@ class SimLogger:
         return out
 
 
-# ============================================================
-#                       ENTIDADES
-# ============================================================
+# ENTIDADES
 class Hostage:
     def __init__(self, unique_id):
         self.unique_id = unique_id
@@ -136,19 +129,15 @@ class Gate:
 class Disturbance:
     def __init__(self, unique_id, severity='mild'):
         self.unique_id = unique_id
-        self.severity = severity            # 'mild' | 'active' | 'grave'
+        self.severity = severity
         self.turns_in_current_state = 0
 
 
-# ============================================================
-#                  RENDER MATRICES (diagnóstico)
-# ============================================================
+# render matrices
 def get_grid_board(model):
-    """
-    Matriz HxW (contenido por celda) — útil para DataCollector / debug.
-    0 vacío, 2 agente, 3 rehén, 4/5/8 disturbio mild/active/grave,
-    7 falsa alarma, 6 entrada, 9 gate abierta, 10 gate cerrada
-    """
+    # Matriz H*W por celda
+    # 0 vacío, 2 agente, 3 rehén, 4/5/8 disturbio mild/active/grave,
+    # 7 falsa alarma, 6 entrada, 9 gate abierta, 10 gate cerrada
     H, W = model.grid.height, model.grid.width
     M = np.zeros((H, W), dtype=np.int32)
 
@@ -184,21 +173,19 @@ def get_grid_board(model):
     return M
 
 
-# ============================================================
-#               AGENTE INTELIGENTE (Dijkstra + jerarquía)
-# ============================================================
+# AGENTE INTELIGENTE
+# Dijkstra y jerarquía
 class TacticalAgent(Agent):
     def __init__(self, unique_id, model):
         super().__init__(model)
         self.unique_id = unique_id
         self.action_points = 4
         self.carrying_hostage = False
-        self.current_path = []     # ruta (lista de (x,y))
-        self.current_goal = None   # objetivo actual
+        self.current_path = []
+        self.current_goal = None
 
     def step(self):
         self.action_points = 4
-        # jerarquía estricta de tareas:
         while self.action_points > 0:
             if self._evacuate_if_carrying():
                 continue
@@ -210,14 +197,12 @@ class TacticalAgent(Agent):
                 continue
             if self._explore_map():
                 continue
-            break  # sin acciones posibles
+            break
 
-    # ---- tareas ----
     def _evacuate_if_carrying(self):
         if not self.carrying_hostage:
             return False
 
-        # ya en entrada → soltar
         if self.pos in self.model.entry_points and self.action_points >= 1:
             self.carrying_hostage = False
             self.model.hostages_rescued += 1
@@ -225,7 +210,6 @@ class TacticalAgent(Agent):
             self.current_path, self.current_goal = [], None
             return True
 
-        # planear hacia la entrada más cercana (Dijkstra)
         if not self.current_path or self.current_goal not in self.model.entry_points:
             nearest = self._nearest_entry()
             if nearest:
@@ -240,7 +224,6 @@ class TacticalAgent(Agent):
         here = self.model.get_contents_at(self.pos)
         h = next((c for c in here if isinstance(c, Hostage)), None)
         if h and self.action_points >= 2:
-            # asegurar revelación y log
             self.model.reveal_if_needed(self.pos)
             if hasattr(self.model, "logger"):
                 self.model.logger.rescue(
@@ -251,7 +234,7 @@ class TacticalAgent(Agent):
             self.current_path, self.current_goal = [], None
             return True
 
-        # buscar rehén más cercano
+        # rehén más cercano
         if not self.current_path or not self._goal_is_hostage():
             target = self._nearest_hostage()
             if target:
@@ -276,7 +259,7 @@ class TacticalAgent(Agent):
                         self.pos[1] + 1, self.pos[0] + 1, t=self.model.turn_counter + 1)
                 self.action_points -= cost
                 self.current_path, self.current_goal = [], None
-                # el ambiente cambió → limpiar caché
+                # caché se limpia si el ambiente cambia
                 self.model.clear_pathfinding_cache()
                 return True
 
@@ -314,7 +297,6 @@ class TacticalAgent(Agent):
         return False
 
     def _explore_map(self):
-        # exploración simple (evita celdas con gates cerradas / POIs revelados)
         if not self.current_path or not self._goal_is_exploration():
             target = self._nearest_explorable()
             if target:
@@ -326,15 +308,12 @@ class TacticalAgent(Agent):
             return self._advance_along_path()
         return False
 
-    # ---- helper de movimiento por ruta (con romper muro dirigido) ----
     def _advance_along_path(self):
         if not self.current_path or len(self.current_path) <= 1:
             return False
         next_pos = self.current_path[1]
 
-        # ¿ruta bloqueada?
         if not self.model.can_move_to(self.pos, next_pos):
-            # Si el bloqueo es un MURO entre pos y next_pos y tengo 2 AP, lo rompo
             if self.model.has_wall_between(self.pos, next_pos) and self.action_points >= 2:
                 self.model.break_wall_between(self.pos, next_pos)
                 self.model.structural_damage += 1
@@ -342,13 +321,10 @@ class TacticalAgent(Agent):
                     self.model.logger.break_wall(
                         self.pos, next_pos, t=self.model.turn_counter + 1)
                 self.action_points -= 2
-                # tras romper, mantenemos la misma ruta (ya es válida) y volvemos al loop
                 return True
-            # si no, se invalida la ruta y replanificará en el próximo ciclo
             self.current_path = []
             return False
 
-        # costo por disturbio en la celda destino
         cost = 1
         for content in self.model.get_contents_at(next_pos):
             if isinstance(content, Disturbance):
@@ -365,11 +341,9 @@ class TacticalAgent(Agent):
             self.current_path = self.current_path[1:]
             self.action_points -= cost
 
-            # si llegué al goal, limpiar
             if next_pos == self.current_goal:
                 self.current_path, self.current_goal = [], None
 
-            # al llegar, revelar si hay POI; si reveló, cortar el turno
             revealed = self.model.reveal_if_needed(self.pos)
             if revealed:
                 self.action_points = 0
@@ -377,7 +351,6 @@ class TacticalAgent(Agent):
 
         return False
 
-    # ---- búsqueda de objetivos ----
     def _nearest_entry(self):
         best_d, best = float("inf"), None
         for entry in self.model.entry_points:
@@ -429,7 +402,6 @@ class TacticalAgent(Agent):
                     best_d, best = d, pos
         return best
 
-    # ---- validadores de goal ----
     def _goal_is_hostage(self):
         return self.current_goal is not None and any(
             isinstance(c, Hostage) for c in self.model.get_contents_at(self.current_goal)
@@ -452,22 +424,18 @@ class TacticalAgent(Agent):
         return self.current_goal is not None
 
 
-# ============================================================
-#                        MODELO
-# ============================================================
+# MODELO
 class RescueModel(Model):
     def __init__(self, config_path="config.json"):
         super().__init__()
         cfg = self._load_config(config_path)
 
         rows, cols = cfg["rows"], cfg["cols"]
-        # Mesa: width=cols, height=rows
+        # mesa: W=c, H=r
         self.grid = MultiGrid(cols, rows, torus=False)
         self.schedule = RandomActivation(self)
         self.cell_contents = defaultdict(list)
         self.running = True
-
-        # métricas
         self.hostages_rescued = 0
         self.hostages_lost = 0
         self.structural_damage = 0
@@ -475,42 +443,31 @@ class RescueModel(Model):
         self.turn_counter = 0
         self.next_entity_id = 0
         self.min_hidden_markers = 3
-
-        # desde config
-        self.walls = {}            # {(x,y): {'top','left','bottom','right'}}
-        self.entry_points = []     # [(x,y)]
+        self.walls = {}
+        self.entry_points = []
         self._build_from_config(cfg)
-
-        # logger + telemetría
         self.logger = SimLogger()
-        self.revealed_pois = set()    # posiciones (x,y) donde ya revelamos v/f
-
-        # caché para pathfinding (Dijkstra)
+        self.revealed_pois = set()
         self._distance_cache = {}
 
-        # spawns iniciales (6) en entradas
         for _ in range(6):
             a = TacticalAgent(self.get_next_id(), self)
             self.schedule.add(a)
             ep = self.random.choice(self.entry_points)
             self.grid.place_agent(a, ep)
 
-        # log de spawns a t=0
         for a in self.schedule.agents:
             if getattr(a, "pos", None) is not None:
                 self.logger.spawn_agent(
                     a.unique_id, a.pos[1] + 1, a.pos[0] + 1, t=0)
 
-        # DataCollector (debug/animaciones en notebooks si quieres)
         self.datacollector = DataCollector(
             model_reporters={"Grid": lambda m: np.array(get_grid_board(m))}
         )
 
-        # snapshot inicial (incluye riots)
         self.logger.snapshot_tick(
             self, t=0, include_pois=False, include_riots=True, include_doors=False)
 
-    # ----------------- parseo de config -----------------
     def _load_config(self, path):
         path = Path(path)
         with path.open("r", encoding="utf-8") as f:
@@ -536,7 +493,6 @@ class RescueModel(Model):
         cells = self._parse_cells(cfg)
         rows, cols = cfg["rows"], cfg["cols"]
 
-        # paredes por celda (up,left,down,right) = "abcd"
         for r in range(rows):
             for c in range(cols):
                 code = cells[r][c]
@@ -551,13 +507,11 @@ class RescueModel(Model):
                     "right":  code[3] == "1",
                 }
 
-        # entradas
         self.entry_points = []
         for e in cfg.get("entries", []):
             r, c = e["r"], e["c"]
             self.entry_points.append((c - 1, r - 1))
 
-        # POIs
         for p in cfg.get("pois", []):
             r, c, kind = p["r"], p["c"], p["kind"]
             pos = (c - 1, r - 1)
@@ -566,21 +520,18 @@ class RescueModel(Model):
             else:
                 self.cell_contents[pos].append(FalseAlarm(self.get_next_id()))
 
-        # disturbios iniciales
         for rr in cfg.get("riots", []):
             r, c = rr["r"], rr["c"]
             pos = (c - 1, r - 1)
             self.cell_contents[pos].append(
                 Disturbance(self.get_next_id(), "mild"))
 
-        # puertas (objeto en celda)
         for d in cfg.get("doors", []):
             r1, c1, r2, c2 = d["r1"], d["c1"], d["r2"], d["c2"]
             is_open = bool(d.get("open", False))
             pos1 = (c1 - 1, r1 - 1)
             self.cell_contents[pos1].append(Gate(self.get_next_id(), is_open))
 
-    # ----------------- utilidades -----------------
     def get_next_id(self):
         self.next_entity_id += 1
         return self.next_entity_id
@@ -591,7 +542,6 @@ class RescueModel(Model):
     def remove_entity(self, entity, pos):
         if pos in self.cell_contents and entity in self.cell_contents[pos]:
             self.cell_contents[pos].remove(entity)
-            # cambiar entorno → limpiar caché
             self.clear_pathfinding_cache()
 
     def can_move_to(self, from_pos, to_pos):
@@ -602,7 +552,6 @@ class RescueModel(Model):
         x1, y1 = from_pos
         dx, dy = x2 - x1, y2 - y1
 
-        # pared en origen en dirección de avance
         w = self.walls.get(from_pos, {})
         if dx == 1 and w.get('right'):
             return False
@@ -613,7 +562,6 @@ class RescueModel(Model):
         elif dy == -1 and w.get('top'):
             return False
 
-        # puerta cerrada en destino bloquea
         cont = self.get_contents_at(to_pos)
         if any(isinstance(g, Gate) and not g.is_open for g in cont):
             return False
@@ -636,7 +584,6 @@ class RescueModel(Model):
         return False
 
     def break_wall_between(self, pos1, pos2):
-        # rompe muro en ambos lados y limpia caché
         x1, y1 = pos1
         x2, y2 = pos2
         dx, dy = x2 - x1, y2 - y1
@@ -667,11 +614,10 @@ class RescueModel(Model):
             self.walls[pos2] = w2
             self.clear_pathfinding_cache()
 
-    # caché de Dijkstra
     def clear_pathfinding_cache(self):
         self._distance_cache.clear()
 
-    # ----------------- Dijkstra -----------------
+    # dijsktra
     def dijkstra_path(self, start, goal):
         if start == goal:
             return [start]
@@ -693,7 +639,6 @@ class RescueModel(Model):
                 if not self.can_move_to(pos, nb):
                     continue
 
-                # costo: disturbio en nb cuesta 2
                 cost = 1
                 for it in self.get_contents_at(nb):
                     if isinstance(it, Disturbance):
@@ -702,7 +647,7 @@ class RescueModel(Model):
 
                 heapq.heappush(pq, (dist + cost, nb, path + [nb]))
 
-        return []  # sin camino
+        return []
 
     def dijkstra_distance(self, start, goal):
         key = (start, goal)
@@ -745,9 +690,7 @@ class RescueModel(Model):
         self._distance_cache[key] = float("inf")
         return float("inf")
 
-    # ----------------- dinámica del “mundo” -----------------
     def get_available_cell(self):
-        # libre de agente y de gate cerrada
         for _ in range(200):
             pos = (self.random.randrange(self.grid.width),
                    self.random.randrange(self.grid.height))
@@ -757,16 +700,13 @@ class RescueModel(Model):
             if any(isinstance(c, TacticalAgent) for c in cont):
                 continue
             return pos
-        # fallback
         return (self.random.randrange(self.grid.width), self.random.randrange(self.grid.height))
 
     def place_passive_entity(self, entity_class):
-        # helper para cumplir min_hidden_markers
         entity = entity_class(self.get_next_id()) if entity_class != Disturbance \
             else Disturbance(self.get_next_id(), "mild")
         pos = self.get_available_cell()
         self.cell_contents[pos].append(entity)
-        # si es disturbio creado “exógenamente”, informa a Unity
         if isinstance(entity, Disturbance) and hasattr(self, "logger"):
             self.logger.riot_spread(pos, pos, t=self.turn_counter + 1)
         self.clear_pathfinding_cache()
@@ -782,7 +722,6 @@ class RescueModel(Model):
             self.place_passive_entity(cls)
 
     def advance_disturbances(self):
-        # progresión por turnos + posible nacimiento
         for pos, cont in list(self.cell_contents.items()):
             ds = [d for d in cont if isinstance(d, Disturbance)]
             for d in ds:
@@ -793,10 +732,8 @@ class RescueModel(Model):
                     self.clear_pathfinding_cache()
                 elif d.severity == "active" and d.turns_in_current_state >= 6:
                     d.severity = "grave"
-                    # explota y desaparece
                     self.handle_explosion(pos, cont)
 
-        # chance baja de nuevo disturbio
         if self.random.random() < 0.05:
             pos = self.get_available_cell()
             cont = self.get_contents_at(pos)
@@ -808,19 +745,16 @@ class RescueModel(Model):
                 self.clear_pathfinding_cache()
 
     def handle_explosion(self, pos, contents):
-        # daño estructural
         self.structural_damage += 1
         if hasattr(self, "logger"):
             self.logger.damage_inc(1, t=self.turn_counter + 1)
 
-        # muros vecinos pueden romperse
         neighbors = [(pos[0] + dx, pos[1] + dy)
                      for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]]
         for nb in neighbors:
             if self.has_wall_between(pos, nb) and self.random.random() < 0.3:
                 self.break_wall_between(pos, nb)
 
-        # puertas cercanas pueden romperse (se quitan)
         for nb in neighbors:
             if nb in self.cell_contents:
                 gates = [g for g in self.cell_contents[nb]
@@ -829,12 +763,10 @@ class RescueModel(Model):
                     if self.random.random() < 0.5:
                         self.remove_entity(g, nb)
 
-        # rehenes perdidos
         for h in [h for h in contents if isinstance(h, Hostage)]:
             self.hostages_lost += 1
             self.remove_entity(h, pos)
 
-        # eliminar disturbio (y notificar contención por explosión)
         removed_any = False
         for d in [d for d in contents if isinstance(d, Disturbance)]:
             self.remove_entity(d, pos)
@@ -849,30 +781,17 @@ class RescueModel(Model):
         if self.hostages_rescued >= 7 or self.hostages_lost >= 4 or self.structural_damage >= 25:
             self.running = False
 
-    # ----------------- ciclo del modelo -----------------
     def step(self):
-        # t que se resuelve ahora (1..n)
         t = self.turn_counter + 1
-
-        # 1) agentes (emiten move/rescue/... a t)
         self.schedule.step()
-
-        # 2) sistema
         self.advance_disturbances()
         self.maintain_minimum_markers()
         self.check_game_over()
-
-        # 3) collector (para diagnósticos / notebooks)
         self.datacollector.collect(self)
-
-        # 4) snapshot final del tick (Unity lo usa en modo snapshotsStrict)
         self.logger.snapshot_tick(
             self, t=t, include_pois=False, include_riots=True, include_doors=False)
-
-        # avanzar reloj
         self.turn_counter = t
 
-    # ----------------- revelar POIs (v/f) una sola vez -----------------
     def reveal_if_needed(self, pos):
         if pos in self.revealed_pois:
             return False

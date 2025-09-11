@@ -1,5 +1,5 @@
-# breakwalls
-# Random + romper paredes
+# random + romper paredes
+# Generado parcialmente con ChatGPT
 
 from mesa import Agent, Model
 from mesa.space import MultiGrid
@@ -12,9 +12,7 @@ import json
 from pathlib import Path
 
 
-# ==========================
-#         LOGGER
-# ==========================
+# LOGGER
 class SimLogger:
     def __init__(self):
         self.steps = []
@@ -54,7 +52,6 @@ class SimLogger:
         self.steps.append({"t": int(t), "type": "damage_inc",
                            "amount": int(amount)})
 
-    # NUEVO: evento para que Unity quite el segmento de muro entre dos celdas vecinas
     def break_wall(self, pos1, pos2, t):
         self.steps.append({
             "t": int(t), "type": "break_wall",
@@ -65,7 +62,6 @@ class SimLogger:
     def snapshot_tick(self, model, t, include_pois=False, include_riots=True, include_doors=False):
         snap = {"t": int(t)}
 
-        # agentes
         agents = []
         for a in model.schedule.agents:
             if getattr(a, "pos", None) is not None:
@@ -117,9 +113,7 @@ class SimLogger:
         return out
 
 
-# ==========================
-#        ENTIDADES
-# ==========================
+# ENTIDADES
 class Hostage:
     def __init__(self, unique_id):
         self.unique_id = unique_id
@@ -139,20 +133,15 @@ class Gate:
 class Disturbance:
     def __init__(self, unique_id, severity='mild'):
         self.unique_id = unique_id
-        self.severity = severity  # 'mild' | 'active' | 'grave'
+        self.severity = severity
         self.turns_in_current_state = 0
 
 
-# ==========================
-#   MATRIZ HxW (debug)
-# ==========================
+# render matrices
 def get_grid_board(model):
-    """
-    HxW con el contenido por celda (sin muros):
-      0 vacío, 2 agente, 3 rehén,
-      4/5/8 disturbio mild/active/grave,
-      7 falsa, 6 entrada, 9/10 reja abierta/cerrada
-    """
+    # Matriz H*W por celda
+    # 0 vacío, 2 agente, 3 rehén, 4/5/8 disturbio mild/active/grave,
+    # 7 falsa alarma, 6 entrada, 9 gate abierta, 10 gate cerrada
     H, W = model.grid.height, model.grid.width
     M = np.zeros((H, W), dtype=np.int32)
 
@@ -186,9 +175,7 @@ def get_grid_board(model):
     return M
 
 
-# ==========================
-#      AGENTE RANDOM
-# ==========================
+# AGENTE ALEATORIO
 class TacticalAgent(Agent):
     def __init__(self, unique_id, model):
         super().__init__(model)
@@ -203,7 +190,6 @@ class TacticalAgent(Agent):
             possible = []
             here = self.model.get_contents_at(self.pos)
 
-            # 1) mover (respeta muros y puertas cerradas)
             for nb in self.model.grid.get_neighborhood(self.pos, moore=False, include_center=False):
                 if self.model.can_move_to(self.pos, nb):
                     cost = 1
@@ -212,22 +198,18 @@ class TacticalAgent(Agent):
                     if self.action_points >= cost:
                         possible.append(("move", nb, cost))
 
-            # 2) rescatar (2 AP)
             if not self.carrying_hostage:
                 h = next((c for c in here if isinstance(c, Hostage)), None)
                 if h and self.action_points >= 2:
                     possible.append(("rescue", h, 2))
 
-            # 3) investigar falsa (1 AP)
             fa = next((c for c in here if isinstance(c, FalseAlarm)), None)
             if fa and self.action_points >= 1:
                 possible.append(("investigate", fa, 1))
 
-            # 4) dejar rehén en entrada (1 AP)
             if self.carrying_hostage and self.pos in self.model.entry_points and self.action_points >= 1:
                 possible.append(("dropoff", None, 1))
 
-            # 5) contener disturbio (1 o 2 AP)
             d = next((c for c in here if isinstance(c, Disturbance)), None)
             if d:
                 if d.severity == "mild" and self.action_points >= 1:
@@ -235,7 +217,6 @@ class TacticalAgent(Agent):
                 elif d.severity == "active" and self.action_points >= 2:
                     possible.append(("contain", d, 2))
 
-            # 6) abrir/cerrar reja (1 AP)
             gate = next((c for c in here if isinstance(c, Gate)), None)
             if gate and self.action_points >= 1:
                 if gate.is_open:
@@ -243,7 +224,6 @@ class TacticalAgent(Agent):
                 else:
                     possible.append(("open_gate", gate, 1))
 
-            # 7) **romper muro** (2 AP) — NUEVO
             if self.action_points >= 2:
                 for nb in self.model.grid.get_neighborhood(self.pos, moore=False, include_center=False):
                     if self.model.has_wall_between(self.pos, nb):
@@ -261,7 +241,6 @@ class TacticalAgent(Agent):
                     self.model.logger.move(
                         self.unique_id, from_pos, target, t=self.model.turn_counter + 1)
 
-                # revelar poi al llegar
                 if self.model.reveal_if_needed(self.pos):
                     self.action_points = 0
                     continue
@@ -296,7 +275,6 @@ class TacticalAgent(Agent):
                 target.is_open = False
 
             elif action == "break_wall":
-                # abre paso en ambos lados + registra daño + LOG para Unity
                 self.model.break_wall_between(self.pos, target)
                 self.model.structural_damage += 1
                 if hasattr(self.model, "logger"):
@@ -306,24 +284,18 @@ class TacticalAgent(Agent):
             self.action_points -= cost
 
 
-# ==========================
-#         MODELO
-# ==========================
+# MODELO
 class RescueModel(Model):
     def __init__(self, config_path="config.json"):
         super().__init__()
         cfg = self._load_config(config_path)
-
         rows = cfg["rows"]
         cols = cfg["cols"]
-
-        # Mesa: width=cols, height=rows
+        # mesa: W=c, H=r
         self.grid = MultiGrid(cols, rows, torus=False)
         self.schedule = RandomActivation(self)
         self.cell_contents = defaultdict(list)
         self.running = True
-
-        # métricas
         self.hostages_rescued = 0
         self.hostages_lost = 0
         self.structural_damage = 0
@@ -331,39 +303,30 @@ class RescueModel(Model):
         self.next_entity_id = 0
         self.turn_counter = 0
         self.min_hidden_markers = 3
-
-        # estructura/escenario
-        self.walls = {}        # {(x,y): {'top','left','bottom','right'}}
-        self.entry_points = []  # [(x,y)]
+        self.walls = {}
+        self.entry_points = []
         self._build_from_config(cfg)
-
-        # logger + revelados
         self.logger = SimLogger()
         self.revealed_pois = set()
 
-        # spawns iniciales (6) en entradas
         for _ in range(6):
             a = TacticalAgent(self.get_next_id(), self)
             self.schedule.add(a)
             ep = self.random.choice(self.entry_points)
             self.grid.place_agent(a, ep)
 
-        # log de spawns a t=0
         for a in self.schedule.agents:
             if getattr(a, "pos", None) is not None:
                 self.logger.spawn_agent(
                     a.unique_id, a.pos[1] + 1, a.pos[0] + 1, t=0)
 
-        # DataCollector para diagnósticos/plots
         self.datacollector = DataCollector(
             model_reporters={"Grid": lambda m: np.array(get_grid_board(m))}
         )
 
-        # snapshot inicial (incluye riots si quieres mostrarlos en debug)
         self.logger.snapshot_tick(
             self, t=0, include_pois=False, include_riots=True, include_doors=False)
 
-    # ---- parseo config ----
     def _load_config(self, path):
         path = Path(path)
         with path.open("r", encoding="utf-8") as f:
@@ -389,7 +352,6 @@ class RescueModel(Model):
         cells = self._parse_cells(cfg)
         rows, cols = cfg["rows"], cfg["cols"]
 
-        # paredes "abcd" = up,left,down,right
         for r in range(rows):
             for c in range(cols):
                 code = cells[r][c]
@@ -404,13 +366,11 @@ class RescueModel(Model):
                     "right":  code[3] == "1",
                 }
 
-        # entradas
         self.entry_points = []
         for e in cfg.get("entries", []):
             r, c = e["r"], e["c"]
             self.entry_points.append((c - 1, r - 1))
 
-        # POIs
         for p in cfg.get("pois", []):
             r, c, kind = p["r"], p["c"], p["kind"]
             pos = (c - 1, r - 1)
@@ -419,21 +379,18 @@ class RescueModel(Model):
             else:
                 self.cell_contents[pos].append(FalseAlarm(self.get_next_id()))
 
-        # disturbios
         for rr in cfg.get("riots", []):
             r, c = rr["r"], rr["c"]
             pos = (c - 1, r - 1)
             self.cell_contents[pos].append(
                 Disturbance(self.get_next_id(), "mild"))
 
-        # puertas (objeto en celda; Unity las dibuja desde config)
         for d in cfg.get("doors", []):
             r1, c1, r2, c2 = d["r1"], d["c1"], d["r2"], d["c2"]
             is_open = bool(d.get("open", False))
             pos1 = (c1 - 1, r1 - 1)
             self.cell_contents[pos1].append(Gate(self.get_next_id(), is_open))
 
-    # ---- utilidades ----
     def get_next_id(self):
         self.next_entity_id += 1
         return self.next_entity_id
@@ -463,7 +420,6 @@ class RescueModel(Model):
         elif dy == -1 and w.get('top'):
             return False
 
-        # puerta cerrada en destino bloquea
         if any(isinstance(g, Gate) and not g.is_open for g in self.get_contents_at(to_pos)):
             return False
 
@@ -485,7 +441,6 @@ class RescueModel(Model):
         return False
 
     def break_wall_between(self, pos1, pos2):
-        # rompe en ambos lados si corresponde
         x1, y1 = pos1
         x2, y2 = pos2
         dx, dy = x2 - x1, y2 - y1
@@ -510,7 +465,6 @@ class RescueModel(Model):
         self.walls[pos2] = w2
 
     def get_available_cell(self):
-        # libre de agentes y de gates cerradas
         for _ in range(200):
             pos = (self.random.randrange(self.grid.width),
                    self.random.randrange(self.grid.height))
@@ -541,7 +495,6 @@ class RescueModel(Model):
             self.place_passive_entity(cls)
 
     def advance_disturbances(self):
-        # progresión + posibles explosiones
         for pos, cont in list(self.cell_contents.items()):
             ds = [d for d in cont if isinstance(d, Disturbance)]
             for d in ds:
@@ -553,7 +506,6 @@ class RescueModel(Model):
                     d.severity = "grave"
                     self.handle_explosion(pos, cont)
 
-        # chance baja de nuevo disturbio
         if self.random.random() < 0.05:
             pos = self.get_available_cell()
             cont = self.get_contents_at(pos)
@@ -570,24 +522,20 @@ class RescueModel(Model):
 
         neighbors = [(pos[0] + dx, pos[1] + dy)
                      for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]]
-        # muros vecinos pueden caer (no lo logueamos, pero puedes añadirlo si lo necesitas)
         for nb in neighbors:
             if self.has_wall_between(pos, nb) and self.random.random() < 0.3:
                 self.break_wall_between(pos, nb)
 
-        # puertas cercanas pueden romperse (se quitan)
         for nb in neighbors:
             if nb in self.cell_contents:
                 for g in [g for g in self.cell_contents[nb] if isinstance(g, Gate)]:
                     if self.random.random() < 0.5:
                         self.remove_entity(g, nb)
 
-        # rehén perdido en la celda
         for h in [h for h in contents if isinstance(h, Hostage)]:
             self.hostages_lost += 1
             self.remove_entity(h, pos)
 
-        # el disturbio desaparece tras la explosión
         for d in [d for d in contents if isinstance(d, Disturbance)]:
             self.remove_entity(d, pos)
             if hasattr(self, "logger"):
@@ -598,22 +546,20 @@ class RescueModel(Model):
         if self.hostages_rescued >= 7 or self.hostages_lost >= 4 or self.structural_damage >= 25:
             self.running = False
 
-    # ciclo por tick
     def step(self):
         t = self.turn_counter + 1
 
-        self.schedule.step()                # agentes primero (emiten eventos a t)
-        self.advance_disturbances()         # luego sistema
+        self.schedule.step()
+        self.advance_disturbances()
         self.maintain_minimum_markers()
         self.check_game_over()
 
-        self.datacollector.collect(self)    # para diagnósticos
+        self.datacollector.collect(self)
         self.logger.snapshot_tick(
             self, t=t, include_pois=False, include_riots=True, include_doors=False)
 
         self.turn_counter = t
 
-    # revelar POIs (una vez)
     def reveal_if_needed(self, pos):
         if pos in getattr(self, "revealed_pois", set()):
             return False

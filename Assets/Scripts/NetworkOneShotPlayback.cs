@@ -1,3 +1,4 @@
+// Script generado con Chatgpt
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,7 +21,7 @@ public class NetworkOneShotPlayback : MonoBehaviour
 
     [Header("Playback")]
     public bool useSnapshotsStrict = true; // 1:1 con unity
-    public bool eventsCompressed = false;  // si snapshots=false: último destino por tick
+    public bool eventsCompressed = false; // si snapshots=false: último destino por tick
     public float stepDuration = 0.5f;
     public float moveLerpTime = 0.25f;
     public bool debugLog = true;
@@ -38,21 +39,19 @@ public class NetworkOneShotPlayback : MonoBehaviour
 
     IEnumerator Run()
     {
-        // config
         yield return provider.LoadConfig(
             cfg => config = cfg,
             err => Debug.LogError($"[NetJsonProvider] {err}")
         );
         if (config == null) yield break;
 
-        // descarga SimLog completo
         yield return provider.LoadFullLog(
             lg => log = lg,
             err => Debug.LogError($"[NetJsonProvider] {err}")
         );
         if (log == null) yield break;
 
-        // construye tablero e iniciales
+        // construye tablero
         var parsedCells = config.cells ?? ParseCellsFromRows(config.cellRows, config.rows, config.cols);
         grid.BuildTiles(config.rows, config.cols);
         grid.BuildWalls(parsedCells);
@@ -107,7 +106,7 @@ public class NetworkOneShotPlayback : MonoBehaviour
                     if (debugLog) Debug.Log($"[Snapshot] t={t}");
                 }
 
-                // eventos de ese mismo t (sin animar moves)
+                // eventos de ese mismo step
                 List<Step> batch = new();
                 if (steps != null)
                 {
@@ -135,7 +134,7 @@ public class NetworkOneShotPlayback : MonoBehaviour
             yield break;
         }
 
-        // reproducción por eventos compressed / step-by-step
+        // reproducción por eventos compressed o paso a paso
         int i = 0;
         while (i < (steps?.Count ?? 0))
         {
@@ -171,7 +170,6 @@ public class NetworkOneShotPlayback : MonoBehaviour
     {
         if (snap == null) return;
 
-        // 1) Agentes (como ya lo haces)
         if (snap.agents != null)
         {
             foreach (var a in snap.agents)
@@ -183,16 +181,13 @@ public class NetworkOneShotPlayback : MonoBehaviour
             }
         }
 
-        // 2) Disturbios: limpiar y volver a poner exactamente los del snapshot
         if (snap.riots != null)
         {
-            // Elimina TODOS los íconos "riot:*"
             var toDelete = new List<string>();
             foreach (var kv in icons)
                 if (kv.Key.StartsWith("riot:")) toDelete.Add(kv.Key);
             foreach (var k in toDelete) RemoveIcon(k);
 
-            // Crea los que vengan en el snapshot
             foreach (var r in snap.riots)
                 PlaceOrSwapIcon($"riot:{r.r},{r.c}", riotPrefab, r.r, r.c);
         }

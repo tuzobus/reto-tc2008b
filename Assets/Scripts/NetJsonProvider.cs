@@ -18,12 +18,13 @@ public class NetJsonProvider : MonoBehaviour
         onDone?.Invoke(cfg);
     }
 
+    // Estructura de carga del log generado con Chatgpt
     public IEnumerator LoadFullLog(Action<SimLog> onDone, Action<string> onError = null, int? maxSteps = null, int? seed = null)
     {
         string url = $"{baseUrl}/run";
         bool hasQ = false;
         if (maxSteps.HasValue) { url += $"{(hasQ?"&":"?")}max_steps={maxSteps.Value}"; hasQ = true; }
-        if (seed.HasValue)     { url += $"{(hasQ?"&":"?")}seed={seed.Value}"; hasQ = true; }
+        if (seed.HasValue) { url += $"{(hasQ?"&":"?")}seed={seed.Value}"; hasQ = true; }
 
         using var req = UnityWebRequest.Get(url);
         yield return req.SendWebRequest();
