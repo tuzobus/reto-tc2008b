@@ -622,10 +622,10 @@ GameObject:
   m_Component:
   - component: {fileID: 1930664214}
   - component: {fileID: 1930664213}
-  - component: {fileID: 1930664212}
-  - component: {fileID: 1930664211}
   - component: {fileID: 1930664216}
   - component: {fileID: 1930664215}
+  - component: {fileID: 1930664211}
+  - component: {fileID: 1930664212}
   m_Layer: 0
   m_Name: Sistema
   m_TagString: Untagged
@@ -743,7 +743,7 @@ MonoBehaviour:
   iconPrefabIsPlane: 1
   agentPrefab: {fileID: 5184933024616991997, guid: 86cd8e29477e546ceb520b102573fe25, type: 3}
   poiUnknownPrefab: {fileID: 9105743867222533124, guid: 2ab9e25e89c0d48cb8cc20c883baffa5, type: 3}
-  poiVictimPrefab: {fileID: 4445850199902855050, guid: fb0c27507cb9f47258134d9e6964ef8f, type: 3}
+  poiVictimPrefab: {fileID: 3134684412196577521, guid: 30e44b281d92b4820a0baded39345541, type: 3}
   poiFalsePrefab: {fileID: 4237716504035969997, guid: bd4fc25680a38476f95a09e0ac95ae45, type: 3}
   riotPrefab: {fileID: 2259116212566779657, guid: 227310564ab4b4d9ba2701f446f2be52, type: 3}
   agentsParent: {fileID: 521032847}

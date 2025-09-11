@@ -374,7 +374,7 @@ class RescueModel(Model):
 
         # snapshot inicial (t=0) para alinear con unity
         self.logger.snapshot_tick(
-            self, t=0, include_pois=False, include_riots=False, include_doors=False)
+            self, t=0, include_pois=False, include_riots=True, include_doors=False)
 
     # parseo de config
     def _load_config(self, path):
@@ -543,6 +543,8 @@ class RescueModel(Model):
         ), 'mild') if entity_class == Disturbance else entity_class(self.get_next_id())
         pos = self.get_available_cell()
         self.cell_contents[pos].append(entity)
+        if isinstance(entity, Disturbance) and hasattr(self, "logger"):
+            self.logger.riot_spread(pos, pos, t=self.turn_counter + 1)
 
     def count_hidden_markers(self):
         return sum(1 for cont in self.cell_contents.values() for it in cont if isinstance(it, (Hostage, FalseAlarm)))
@@ -573,6 +575,9 @@ class RescueModel(Model):
             if not any(isinstance(c, Disturbance) for c in cont):
                 self.cell_contents[pos].append(
                     Disturbance(self.get_next_id(), "mild"))
+                if hasattr(self, "logger"):
+                    # "nace" en la misma celda; Unity ya maneja riot_spread
+                    self.logger.riot_spread(pos, pos, t=self.turn_counter + 1)
 
     def handle_explosion(self, pos, contents):
         self.structural_damage += 1
@@ -601,6 +606,10 @@ class RescueModel(Model):
         # el disturbio desaparece tras la explosion
         for d in [d for d in contents if isinstance(d, Disturbance)]:
             self.remove_entity(d, pos)
+            if hasattr(self, "logger"):
+                # Notifica a Unity que ese riot dejó de existir
+                self.logger.riot_contained(
+                    pos[1] + 1, pos[0] + 1, t=self.turn_counter + 1)
 
     def check_game_over(self):
         if self.hostages_rescued >= 7 or self.hostages_lost >= 4 or self.structural_damage >= 25:
@@ -623,7 +632,7 @@ class RescueModel(Model):
 
         # snapshot final del tick (lo que unity deberia ver en frame t)
         self.logger.snapshot_tick(
-            self, t=t, include_pois=False, include_riots=False, include_doors=False)
+            self, t=t, include_pois=False, include_riots=True, include_doors=False)
 
         self.turn_counter = t
 

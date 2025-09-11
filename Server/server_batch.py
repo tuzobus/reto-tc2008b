@@ -13,6 +13,7 @@ from flask_cors import CORS
 import json
 from pathlib import Path
 from rescue_model import RescueModel
+#from rescue_model_smart import RescueModel
 
 app = Flask(__name__)
 CORS(app)

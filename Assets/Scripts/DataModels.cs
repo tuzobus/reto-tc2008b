@@ -44,6 +44,7 @@ public class AgentState {
 public class Snapshot {
     public int t;
     public List<AgentState> agents;
+    public List<Riot> riots;
 }
 
 [Serializable]

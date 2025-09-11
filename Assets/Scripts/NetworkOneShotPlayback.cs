@@ -163,15 +163,32 @@ public class NetworkOneShotPlayback : MonoBehaviour
 
     void ApplySnapshot(Snapshot snap)
     {
-        if (snap == null || snap.agents == null) return;
-        foreach (var a in snap.agents)
+        if (snap == null) return;
+
+        // 1) Agentes (como ya lo haces)
+        if (snap.agents != null)
         {
-            if (!agents.TryGetValue(a.id, out var go))
+            foreach (var a in snap.agents)
             {
-                go = Instantiate(agentPrefab, grid.CenterOfCell(a.r, a.c), Quaternion.identity, agentsParent);
-                agents[a.id] = go;
+                if (!agents.TryGetValue(a.id, out var go))
+                    agents[a.id] = Instantiate(agentPrefab, grid.CenterOfCell(a.r, a.c), Quaternion.identity, agentsParent);
+                else
+                    go.transform.position = grid.CenterOfCell(a.r, a.c);
             }
-            else go.transform.position = grid.CenterOfCell(a.r, a.c);
+        }
+
+        // 2) Disturbios: limpiar y volver a poner exactamente los del snapshot
+        if (snap.riots != null)
+        {
+            // Elimina TODOS los íconos "riot:*"
+            var toDelete = new List<string>();
+            foreach (var kv in icons)
+                if (kv.Key.StartsWith("riot:")) toDelete.Add(kv.Key);
+            foreach (var k in toDelete) RemoveIcon(k);
+
+            // Crea los que vengan en el snapshot
+            foreach (var r in snap.riots)
+                PlaceOrSwapIcon($"riot:{r.r},{r.c}", riotPrefab, r.r, r.c);
         }
     }
 
