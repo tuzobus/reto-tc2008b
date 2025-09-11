@@ -31,6 +31,13 @@ public class GridBuilder : MonoBehaviour
 
     // Puertas para actualizaciones
     readonly Dictionary<string, DoorVisual> doorMap = new();
+    readonly Dictionary<string, GameObject> wallMap = new();
+    static string WallKey(int r1, int c1, int r2, int c2)
+    {
+        // clave no-direccional (normalizada)
+        if (r2 < r1 || (r2 == r1 && c2 < c1)) { (r1, r2) = (r2, r1); (c1, c2) = (c2, c1); }
+        return $"{r1},{c1}-{r2},{c2}";
+    }
 
     // ========================
     //     CELDA a MUNDO(1-based)
@@ -101,6 +108,8 @@ public class GridBuilder : MonoBehaviour
     public void BuildWalls(string[][] cells)
     {
         ClearParent(wallsParent);
+        wallMap.Clear();
+
         if (cells == null || cells.Length == 0)
         {
             Debug.LogError("cells es null o vacío; no se pueden construir muros.");
@@ -114,13 +123,53 @@ public class GridBuilder : MonoBehaviour
         for (int c = 1; c <= cols; c++)
         {
             string code = cells[r - 1][c - 1];
-            var basePos = CenterOfCell(r, c);
             if (string.IsNullOrEmpty(code) || code.Length != 4) continue;
 
-            if (code[0] == '1') PlaceWall(basePos, 0f);
-            if (code[1] == '1') PlaceWall(basePos, 90f);
-            if (code[2] == '1') PlaceWall(basePos, 180f);
-            if (code[3] == '1') PlaceWall(basePos, 270f);
+            // TOP: (r,c) - (r-1,c)
+            if (code[0] == '1' && r > 1) PlaceWallSegment(r, c, r - 1, c, 0f);
+            // LEFT: (r,c) - (r,c-1)
+            if (code[1] == '1' && c > 1) PlaceWallSegment(r, c, r, c - 1, 90f);
+            // BOTTOM: (r,c) - (r+1,c)
+            if (code[2] == '1' && r < rows) PlaceWallSegment(r, c, r + 1, c, 180f);
+            // RIGHT: (r,c) - (r,c+1)
+            if (code[3] == '1' && c < cols) PlaceWallSegment(r, c, r, c + 1, 270f);
+        }
+    }
+
+    void PlaceWallSegment(int r1, int c1, int r2, int c2, float rotY)
+    {
+        string key = WallKey(r1, c1, r2, c2);
+        if (wallMap.ContainsKey(key)) return; // ya creado por la otra celda
+
+        Vector3 cellCenter = CenterOfCell(r1, c1);
+        float half = cellSize * 0.5f;
+        Vector3 offset = rotY switch
+        {
+            0f   => new Vector3(0, 0,  +half),  // top edge de (r1,c1)
+            90f  => new Vector3(-half, 0, 0),   // left edge
+            180f => new Vector3(0, 0,  -half),  // bottom edge
+            270f => new Vector3(+half, 0, 0),   // right edge
+            _    => Vector3.zero
+        };
+
+        var go = Instantiate(wallPrefab, cellCenter + offset, Quaternion.Euler(0, rotY, 0), wallsParent);
+        go.transform.localScale = new Vector3(cellSize, go.transform.localScale.y, go.transform.localScale.z);
+        go.transform.position  += Vector3.up * (go.transform.localScale.y * 0.5f);
+
+        wallMap[key] = go;
+    }
+
+    public void RemoveWallByCells(int r1, int c1, int r2, int c2)
+    {
+        string key = WallKey(r1, c1, r2, c2);
+        if (wallMap.TryGetValue(key, out var go))
+        {
+            Destroy(go);
+            wallMap.Remove(key);
+        }
+        else
+        {
+            Debug.LogWarning($"[GridBuilder] No encontré muro {key} para eliminar.");
         }
     }
 

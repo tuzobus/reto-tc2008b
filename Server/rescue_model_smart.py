@@ -1,10 +1,4 @@
-# rescue_model_smart.py
-# Modelo "inteligente" compatible con Unity:
-# - Eventos: spawn_agent, move, reveal_poi, rescue, riot_spread, riot_contained, damage_inc
-# - Snapshots por tick: t, agents[{id,r,c}], riots[{r,c,severity}]
-# - Dijkstra con costo 1 (normal) / 2 (celda con Disturbance)
-# - Caché de distancias, invalidada cuando cambia el entorno (muros, puertas, disturbios)
-# - Misma firma/clase que usas en tu server: class RescueModel(config_path="config.json")
+# smart breakwalls
 
 from mesa import Agent, Model
 from mesa.space import MultiGrid
@@ -47,7 +41,6 @@ class SimLogger:
             {"t": int(t), "type": "rescue", "r": int(r), "c": int(c)})
 
     def riot_spread(self, from_pos, to_pos, t):
-        # Para nacimiento o propagación: usamos from=to cuando nace en sitio
         self.steps.append({
             "t": int(t), "type": "riot_spread",
             "from": {"r": int(from_pos[1] + 1), "c": int(from_pos[0] + 1)},
@@ -61,6 +54,14 @@ class SimLogger:
     def damage_inc(self, amount, t):
         self.steps.append(
             {"t": int(t), "type": "damage_inc", "amount": int(amount)})
+
+    # NUEVO: evento para suprimir el segmento de muro entre dos celdas vecinas
+    def break_wall(self, pos1, pos2, t):
+        self.steps.append({
+            "t": int(t), "type": "break_wall",
+            "r1": int(pos1[1] + 1), "c1": int(pos1[0] + 1),
+            "r2": int(pos2[1] + 1), "c2": int(pos2[0] + 1)
+        })
 
     # ---- snapshots (estado final por tick) ----
     def snapshot_tick(self, model, t, include_pois=False, include_riots=True, include_doors=False):
@@ -83,11 +84,9 @@ class SimLogger:
                 if d:
                     riots.append(
                         {"r": y + 1, "c": x + 1, "severity": d.severity})
-            # Orden estable
             riots.sort(key=lambda p: (p["r"], p["c"]))
             snap["riots"] = riots
 
-        # (opcional) puertas -> Unity no las consume hoy
         if include_doors:
             doors = []
             for (x, y), contents in model.cell_contents.items():
@@ -147,10 +146,8 @@ class Disturbance:
 def get_grid_board(model):
     """
     Matriz HxW (contenido por celda) — útil para DataCollector / debug.
-    No dibuja muros.
-    Códigos (coinciden con tus diagnósticos):
-      0 vacío, 2 agente, 3 rehén, 4/5/8 disturbio mild/active/grave,
-      7 falsa alarma, 6 entrada, 9 gate abierta, 10 gate cerrada
+    0 vacío, 2 agente, 3 rehén, 4/5/8 disturbio mild/active/grave,
+    7 falsa alarma, 6 entrada, 9 gate abierta, 10 gate cerrada
     """
     H, W = model.grid.height, model.grid.width
     M = np.zeros((H, W), dtype=np.int32)
@@ -317,7 +314,7 @@ class TacticalAgent(Agent):
         return False
 
     def _explore_map(self):
-        # exploración simple: buscar celdas "alcanzables y poco valiosas" (sin POIs ya revelados)
+        # exploración simple (evita celdas con gates cerradas / POIs revelados)
         if not self.current_path or not self._goal_is_exploration():
             target = self._nearest_explorable()
             if target:
@@ -329,14 +326,25 @@ class TacticalAgent(Agent):
             return self._advance_along_path()
         return False
 
-    # ---- helper de movimiento por ruta ----
+    # ---- helper de movimiento por ruta (con romper muro dirigido) ----
     def _advance_along_path(self):
         if not self.current_path or len(self.current_path) <= 1:
             return False
         next_pos = self.current_path[1]
 
+        # ¿ruta bloqueada?
         if not self.model.can_move_to(self.pos, next_pos):
-            # camino invalidado → replanificar en próximo ciclo
+            # Si el bloqueo es un MURO entre pos y next_pos y tengo 2 AP, lo rompo
+            if self.model.has_wall_between(self.pos, next_pos) and self.action_points >= 2:
+                self.model.break_wall_between(self.pos, next_pos)
+                self.model.structural_damage += 1
+                if hasattr(self.model, "logger"):
+                    self.model.logger.break_wall(
+                        self.pos, next_pos, t=self.model.turn_counter + 1)
+                self.action_points -= 2
+                # tras romper, mantenemos la misma ruta (ya es válida) y volvemos al loop
+                return True
+            # si no, se invalida la ruta y replanificará en el próximo ciclo
             self.current_path = []
             return False
 
@@ -361,7 +369,7 @@ class TacticalAgent(Agent):
             if next_pos == self.current_goal:
                 self.current_path, self.current_goal = [], None
 
-            # al llegar, revelar si hay POI; si reveló, cortar el turno (para separar ticks en el log)
+            # al llegar, revelar si hay POI; si reveló, cortar el turno
             revealed = self.model.reveal_if_needed(self.pos)
             if revealed:
                 self.action_points = 0
@@ -407,16 +415,13 @@ class TacticalAgent(Agent):
         return best
 
     def _nearest_explorable(self):
-        # celdas sin objetos "relevantes" visibles; evita pos en self.model.revealed_pois
         best_d, best = float("inf"), None
         for x in range(self.model.grid.width):
             for y in range(self.model.grid.height):
                 pos = (x, y)
-                # filtra: no gate cerrada (bloquea), no agentes (para reducir atascos),
                 cont = self.model.get_contents_at(pos)
                 if any(isinstance(g, Gate) and not g.is_open for g in cont):
                     continue
-                # evita repetir celdas ya reveladas como POI (solo marca donde había POI)
                 if pos in self.model.revealed_pois:
                     continue
                 d = self.model.dijkstra_distance(self.pos, pos)
@@ -501,7 +506,7 @@ class RescueModel(Model):
             model_reporters={"Grid": lambda m: np.array(get_grid_board(m))}
         )
 
-        # snapshot inicial (incluye riots para que Unity concilie icónicos)
+        # snapshot inicial (incluye riots)
         self.logger.snapshot_tick(
             self, t=0, include_pois=False, include_riots=True, include_doors=False)
 
@@ -568,7 +573,7 @@ class RescueModel(Model):
             self.cell_contents[pos].append(
                 Disturbance(self.get_next_id(), "mild"))
 
-        # puertas (objeto en celda) — Unity solo las dibuja desde config
+        # puertas (objeto en celda)
         for d in cfg.get("doors", []):
             r1, c1, r2, c2 = d["r1"], d["c1"], d["r2"], d["c2"]
             is_open = bool(d.get("open", False))
@@ -589,7 +594,6 @@ class RescueModel(Model):
             # cambiar entorno → limpiar caché
             self.clear_pathfinding_cache()
 
-    # chequeo de paredes y puertas
     def can_move_to(self, from_pos, to_pos):
         x2, y2 = to_pos
         if not (0 <= x2 < self.grid.width and 0 <= y2 < self.grid.height):
@@ -632,7 +636,7 @@ class RescueModel(Model):
         return False
 
     def break_wall_between(self, pos1, pos2):
-        # (solo explosiones llaman a esto; agentes NO rompen paredes)
+        # rompe muro en ambos lados y limpia caché
         x1, y1 = pos1
         x2, y2 = pos2
         dx, dy = x2 - x1, y2 - y1

@@ -124,6 +124,9 @@ public class NetworkOneShotPlayback : MonoBehaviour
                         case "riot_spread":HandleRiotSpread(s);break;
                         case "riot_contained": HandleRiotContained(s); break;
                         case "damage_inc": break;
+                        case "break_wall":
+                            grid.RemoveWallByCells(s.r1, s.c1, s.r2, s.c2);
+                            break;
                     }
                 }
 
@@ -151,6 +154,9 @@ public class NetworkOneShotPlayback : MonoBehaviour
                     case "riot_spread":HandleRiotSpread(s);break;
                     case "riot_contained": HandleRiotContained(s); break;
                     case "damage_inc": break;
+                    case "break_wall":
+                        grid.RemoveWallByCells(s.r1, s.c1, s.r2, s.c2);
+                        break;
                 }
             }
 
